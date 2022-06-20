@@ -14,8 +14,16 @@ enum Instruction {
     POP = 0x02,
     NIP = 0x03,
     SWP = 0x04,
+    DEO = 0x17,
     LIT = 0x80,
     LIT2 = 0xa0,
+}
+
+#[repr(u8)]
+#[derive(FromPrimitive)]
+enum Device {
+    #[num_enum(default)]
+    ConsoleWrite = 0x18
 }
 
 fn main() {
@@ -26,7 +34,7 @@ fn main() {
 }
 
 fn load_file() -> Result<Vec<u8>, std::io::Error> {
-    let mut file = File::open("literals.rom")?;
+    let mut file = File::open("roms/hello.rom")?;
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer)?;
     Ok(buffer)
@@ -129,7 +137,19 @@ fn execute(code: Vec<u8>) -> MachineState {
 		wst[wst_pointer-2] = wst[wst_pointer-1];
 		wst[wst_pointer-1] = swp;
 		pc += 1;
+	    },
+	    Instruction::DEO => {
+		device_write(wst[wst_pointer-2], Device::from(wst[wst_pointer-1]));
+		pc += 1;
 	    }
+	}
+    }
+}
+
+fn device_write(val: u8, device: Device) {
+    match device {
+	Device::ConsoleWrite => {
+	    print!("{}", val as char);
 	}
     }
 }
