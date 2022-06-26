@@ -1,4 +1,3 @@
-use std::io::BufReader;
 use std::io::prelude::*;
 use std::fs::File;
 
@@ -25,6 +24,10 @@ enum Instruction {
     JCN = 0x0d,
     JSR = 0x0e,
     STH = 0x0f,
+    LDZ = 0x10,
+    STZ = 0x11,
+    LDR = 0x12,
+    STR = 0x13,
     DEO = 0x17,
     ADD = 0x18,
     SUB = 0x19,
@@ -70,29 +73,35 @@ fn load_file() -> Result<Vec<u8>, std::io::Error> {
     Ok(buffer)
 }
 
-struct WorkingStack {
+struct Stack {
     st: Vec<u8>,
     p: usize,
-    current_opcode: u8,
+    keep_mode: bool,
+    short_mode: bool,
 }
 
-impl WorkingStack {
+impl Stack {
     fn new() -> Self {
-	WorkingStack {
+	Stack {
 	    st: vec![0; 256],
 	    p : 0x00,
-	    current_opcode: 0x00
+	    keep_mode: false,
+	    short_mode: false,
 	}
     }
 
     fn set_current_opcode(&mut self, opcode: u8) {
-	self.current_opcode = opcode;
+	if opcode < 128 {
+	    self.keep_mode = false;
+	} else {
+	    self.keep_mode = true;
+	}
     }
 
     fn read(&mut self) -> u8 {
 	let a = self.st[self.p-1];
 	// check keep mode bit
-	if self.current_opcode < 128 {
+	if !self.keep_mode {
 	    self.p -= 1;
 	}
 	a
@@ -105,19 +114,18 @@ impl WorkingStack {
 }
 
 struct MachineState {
-    wst: WorkingStack,
-    rst: Vec<u8>,
+    wst: Stack,
+    rst: Stack,
     mem: Vec<u8>,
     pc: u16,
 }
 
 fn execute(code: Vec<u8>) -> MachineState {
-    let mut wst = WorkingStack::new();
-    let mut rst: Vec<u8> = vec![0; 256];
+    let mut wst = Stack::new();
+    let mut rst = Stack::new();
     let mut mem: Vec<u8> = vec![0; 65536];
     mem[0x0100..0x0100+code.len()].copy_from_slice(&code);
     let mut pc = 0x0100;
-    let mut rst_pointer = 0x00;
     loop {
 	wst.set_current_opcode(mem[pc]);
 	match Instruction::from(mem[pc]) {
@@ -242,13 +250,36 @@ fn execute(code: Vec<u8>) -> MachineState {
 	    }
 	    Instruction::JSR | Instruction::JSRk => {
 		let addr = wst.read();
-		rst[rst_pointer] = (pc - 0x0100) as u8;
+		rst.write((pc - 0x0100) as u8);
 		pc = (pc as i16 + addr as i16) as usize;
-		rst_pointer += 1;
 	    }
 	    Instruction::STH | Instruction::STHk => {
-		rst[rst_pointer] = wst.read();
-		rst_pointer += 1;
+		let a = wst.read();
+		rst.write(a);
+		pc += 1;
+	    }
+	    Instruction::LDZ => {
+		let addr = wst.read();
+		let val = mem[addr as usize];
+		wst.write(val);
+		pc += 1;
+	    }
+	    Instruction::STZ => {
+		let addr = wst.read();
+		let val = wst.read();
+		mem[addr as usize] = val;
+		pc += 1;
+	    }
+	    Instruction::LDR => {
+		let addr = wst.read() as i16;
+		let value = mem[((pc as i16) + addr) as usize];
+		wst.write(value);
+		pc += 1;
+	    }
+	    Instruction::STR => {
+		let addr = wst.read() as i16;
+		let val = wst.read();
+		mem[((pc as i16) + addr) as usize] = val;
 		pc += 1;
 	    }
 	    Instruction::DEO => {
@@ -560,7 +591,7 @@ fn jsr() {
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
     assert_eq!(0x0100 + 0x02 + 0x34 + 0x01, state.pc);
-    assert_eq!(rst, state.rst);
+    assert_eq!(rst, state.rst.st);
 }
 
 #[test]
@@ -574,14 +605,14 @@ fn sth() {
     let state = execute(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
-    assert_eq!(rst, state.rst);
+    assert_eq!(rst, state.rst.st);
 }
 
-
-
-
-
-
-
-
-
+#[test]
+fn ldz_and_stz() {
+    let code = vec![0xa0, 0x50, 0x00, 0x11, 0x80, 0x00, 0x10];
+    let mut wst = vec![0; 256];
+    wst[0] = 0x50;
+    let state = execute(code);
+    assert_eq!(wst, state.wst.st);
+}
