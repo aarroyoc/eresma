@@ -1,6 +1,18 @@
 use std::io::prelude::*;
 use std::fs::File;
 
+use gl::types::*;
+use gl_rs as gl;
+use glutin::{
+    event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+    GlProfile,
+};
+use skia_safe::{
+    gpu::{gl::FramebufferInfo, BackendRenderTarget, SurfaceOrigin},
+    Color, ColorType, Surface,
+};
 use num_enum::FromPrimitive;
 
 // https://wiki.xxiivv.com/site/uxntal_reference.html
@@ -84,6 +96,7 @@ enum Instruction {
     NEQkr = 0xc9,
     GTHkr = 0xca,
     LTHkr = 0xcb,
+    LIT2r = 0xe0,
 }
 
 #[repr(u8)]
@@ -94,6 +107,46 @@ enum Device {
 }
 
 fn main() {
+    type WindowedContext = glutin::ContextWrapper<glutin::PossiblyCurrent, glutin::window::Window>;
+
+    let el = EventLoop::new();
+    let wb = WindowBuilder::new().with_title("ERESMA");
+
+    let cb = glutin::ContextBuilder::new()
+	.with_depth_buffer(0)
+	.with_stencil_buffer(8)
+	.with_pixel_format(24, 8)
+	.with_gl_profile(GlProfile::Core);
+
+    let windowed_context = cb.build_windowed(wb, &el).unwrap();
+    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
+
+    let pixel_format = windowed_context.get_pixel_format();
+    println!(
+        "Pixel format of the window's GL context: {:?}",
+        pixel_format
+    );
+
+    gl::load_with(|s| windowed_context.get_proc_address(s));
+
+    let mut gr_context = skia_safe::gpu::DirectContext::new_gl(None, None).unwrap();
+
+    let fb_info = {
+        let mut fboid: GLint = 0;
+        unsafe { gl::GetIntegerv(gl::FRAMEBUFFER_BINDING, &mut fboid) };
+
+        FramebufferInfo {
+            fboid: fboid.try_into().unwrap(),
+            format: skia_safe::gpu::gl::Format::RGBA8.into(),
+        }
+    };
+
+    windowed_context
+        .window()
+        .set_inner_size(glutin::dpi::Size::new(glutin::dpi::LogicalSize::new(
+            1024.0, 1024.0,
+        )));
+    
     match load_file() {
 	Ok(code) => {execute(code);},
 	Err(msg) => eprintln!("{}", msg)
@@ -191,7 +244,7 @@ fn execute(code: Vec<u8>) -> MachineState {
 		wst.write(mem[pc+1]);
 		pc += 2;
 	    },
-	    Instruction::LIT2 => {
+	    Instruction::LIT2 | Instruction::LIT2r => {
 		wst.write(mem[pc+1]);
 		wst.write(mem[pc+2]);
 		pc += 3;
