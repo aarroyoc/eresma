@@ -1,19 +1,16 @@
 use std::io::prelude::*;
 use std::fs::File;
 
-use gl::types::*;
-use gl_rs as gl;
-use glutin::{
-    event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
-    window::WindowBuilder,
-    GlProfile,
-};
-use skia_safe::{
-    gpu::{gl::FramebufferInfo, BackendRenderTarget, SurfaceOrigin},
-    Color, ColorType, Surface,
-};
+use glam::*;
+use ggez::event;
+use ggez::graphics::{self,*};
+use ggez::conf::{WindowMode, WindowSetup};
+use ggez::{Context, GameResult};
 use num_enum::FromPrimitive;
+
+mod stack;
+
+use stack::Stack;
 
 // https://wiki.xxiivv.com/site/uxntal_reference.html
 #[repr(u8)]
@@ -49,6 +46,10 @@ enum Instruction {
     ORA = 0x1d,
     EOR = 0x1e,
     SFT = 0x1f,
+    INC2 = 0x21,
+    DEI2 = 0x36,
+    DEO2 = 0x37,
+    ADD2 = 0x38,
     INCr = 0x41,
     POPr = 0x42,
     NIPr = 0x43,
@@ -103,106 +104,152 @@ enum Instruction {
 #[derive(FromPrimitive)]
 enum Device {
     #[num_enum(default)]
-    ConsoleWrite = 0x18
+    SystemRedHigh = 0x08,
+    SystemRedLow = 0x09,
+    SystemGreenHigh = 0x0a,
+    SystemGreenLow = 0x0b,
+    SystemBlueHigh = 0x0c,
+    SystemBlueLow = 0x0d,
+    ConsoleWrite = 0x18,
+    ScreenVector = 0x20,
+    ScreenWidth = 0x22,
+    ScreenHeight = 0x24,
+    ScreenAuto = 0x26,
+    ScreenXHigh = 0x28,
+    ScreenXLow = 0x29,
+    ScreenYHigh = 0x2a,
+    ScreenYLow = 0x2b,
+    ScreenMemAddress = 0x2c,
+    ScreenPixel = 0x2e,
+    ScreenSprite = 0x2f,
 }
 
-fn main() {
-    type WindowedContext = glutin::ContextWrapper<glutin::PossiblyCurrent, glutin::window::Window>;
-
-    let el = EventLoop::new();
-    let wb = WindowBuilder::new().with_title("ERESMA");
-
-    let cb = glutin::ContextBuilder::new()
-	.with_depth_buffer(0)
-	.with_stencil_buffer(8)
-	.with_pixel_format(24, 8)
-	.with_gl_profile(GlProfile::Core);
-
-    let windowed_context = cb.build_windowed(wb, &el).unwrap();
-    let windowed_context = unsafe { windowed_context.make_current().unwrap() };
-
-    let pixel_format = windowed_context.get_pixel_format();
-    println!(
-        "Pixel format of the window's GL context: {:?}",
-        pixel_format
-    );
-
-    gl::load_with(|s| windowed_context.get_proc_address(s));
-
-    let mut gr_context = skia_safe::gpu::DirectContext::new_gl(None, None).unwrap();
-
-    let fb_info = {
-        let mut fboid: GLint = 0;
-        unsafe { gl::GetIntegerv(gl::FRAMEBUFFER_BINDING, &mut fboid) };
-
-        FramebufferInfo {
-            fboid: fboid.try_into().unwrap(),
-            format: skia_safe::gpu::gl::Format::RGBA8.into(),
-        }
-    };
-
-    windowed_context
-        .window()
-        .set_inner_size(glutin::dpi::Size::new(glutin::dpi::LogicalSize::new(
-            1024.0, 1024.0,
-        )));
-    
-    match load_file() {
-	Ok(code) => {execute(code);},
-	Err(msg) => eprintln!("{}", msg)
-    }
-}
-
-fn load_file() -> Result<Vec<u8>, std::io::Error> {
-    let mut file = File::open("roms/hello.rom")?;
-    let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer)?;
-    Ok(buffer)
-}
+const SCREEN_WIDTH: usize = 512;
+const SCREEN_HEIGHT: usize = 320;
+const SCREEN_SIZE: usize = (SCREEN_WIDTH*SCREEN_HEIGHT*4) as usize;
 
 #[derive(Clone)]
-struct Stack {
-    st: Vec<u8>, // Stack
-    p: usize, // Pointer of the stack
-    k: usize, // Keep Mode relative pointer
-    keep_mode: bool,
-    short_mode: bool,
+struct Devices {
+    system: [u8; 16],
+    screen: [u8; 16],
+    screen_buffer_bg: Vec<u8>,
+    screen_buffer_fg: Vec<u8>,
 }
 
-impl Stack {
-    fn new() -> Self {
-	Stack {
-	    st: vec![0; 256],
-	    p : 0x00,
-	    k: 1,
-	    keep_mode: false,
-	    short_mode: false,
+impl Default for Devices {
+    fn default() -> Self {
+	Devices {
+	    system: [0; 16],
+	    screen: [0; 16],
+	    screen_buffer_bg: vec![0; SCREEN_SIZE],
+	    screen_buffer_fg: vec![0; SCREEN_SIZE],
+	}
+    }
+}
+
+impl Devices {
+    fn write(&mut self, val: u8, device: u8) {
+	match Device::from(device) {
+	    Device::SystemRedHigh => {
+		self.system[8] = val;
+	    }
+	    Device::SystemRedLow => {
+		self.system[9] = val;
+	    }
+	    Device::SystemGreenHigh => {
+		self.system[10] = val;
+	    }
+    	    Device::SystemGreenLow => {
+		self.system[11] = val;
+	    }
+    	    Device::SystemBlueHigh => {
+		self.system[12] = val;
+	    }
+    	    Device::SystemBlueLow => {
+		self.system[13] = val;
+	    }
+	    Device::ConsoleWrite => {
+		print!("{}", val as char);
+	    }
+	    Device::ScreenXHigh => {
+		self.screen[7] = val;
+	    }
+	    Device::ScreenXLow => {
+		self.screen[8] = val;
+	    }
+	    Device::ScreenYHigh => {
+		self.screen[9] = val;
+	    }
+	    Device::ScreenYLow => {
+		self.screen[10] = val;
+	    }
+	    Device::ScreenPixel => {
+		let x: u16 = (self.screen[7] as u16)*256 + self.screen[8] as u16;
+		let y: u16 = (self.screen[9] as u16)*256 + self.screen[10] as u16;
+		let color0 = [(self.system[8] >> 4) | (self.system[8] >> 4) << 4, (self.system[10] >> 4) | (self.system[10] >> 4) << 4, (self.system[12] >> 4) | (self.system[12] >> 4) << 4, 0xff];
+		let color1 = [(self.system[8] << 4) | (self.system[8] << 4) >> 4, (self.system[10] << 4) | (self.system[10] << 4) >> 4, (self.system[12] << 4) | (self.system[12] << 4) >> 4, 0xff];
+		let color2 = [(self.system[9] >> 4) | (self.system[9] >> 4) << 4, (self.system[11] >> 4) | (self.system[11] >> 4) << 4, (self.system[13] >> 4) | (self.system[13] >> 4) << 4, 0xff];
+		let color3 = [(self.system[9] << 4) | (self.system[9] << 4) >> 4, (self.system[11] << 4) | (self.system[11] << 4) >> 4, (self.system[13] << 4) | (self.system[13] << 4) >> 4, 0xff];
+		match val {
+		    0x00 => self.draw_screen_bg(x, y, color0),
+		    0x01 => self.draw_screen_bg(x, y, color1),
+		    0x02 => self.draw_screen_bg(x, y, color2),
+		    0x03 => self.draw_screen_bg(x, y, color3),
+		    0x40 => self.draw_screen_fg(x, y, color0),
+		    0x41 => self.draw_screen_fg(x, y, color1),
+		    0x42 => self.draw_screen_fg(x, y, color2),
+		    0x43 => self.draw_screen_fg(x, y, color3),
+		    _ => {}
+		}
+	    }
+	    _ => todo!()
 	}
     }
 
-    fn set_current_opcode(&mut self, opcode: u8) {
-	self.k = 1; // reset keep mode relative pointer
-	if opcode < 0x80 {
-	    self.keep_mode = false;
-	} else {
-	    self.keep_mode = true;
+    fn draw_screen_bg(&mut self, x: u16, y: u16, color: [u8; 4]) {
+	let base: usize = ((x as usize)+(y as usize * SCREEN_HEIGHT))*4;
+	self.screen_buffer_bg[base] = color[0];
+	self.screen_buffer_bg[base+1] = color[1];
+	self.screen_buffer_bg[base+2] = color[2];
+	self.screen_buffer_bg[base+3] = color[3];
+    }
+
+    fn draw_screen_fg(&mut self, x: u16, y: u16, color: [u8; 4]) {
+	let base: usize = ((x as usize)+(y as usize * SCREEN_HEIGHT))*4;
+	self.screen_buffer_fg[base] = color[0];
+	self.screen_buffer_fg[base+1] = color[1];
+	self.screen_buffer_fg[base+2] = color[2];
+	self.screen_buffer_fg[base+3] = color[3];
+    }
+
+    fn write_short(&mut self, val: u16, device: u8) {
+	let next_device = device + 1;
+	self.write((val / 256) as u8, device);
+	self.write((val % 256) as u8, next_device);
+    }
+
+    fn read(&self, device: u8) -> u8 {
+	match Device::from(device) {
+	    Device::ScreenXHigh => {
+		self.screen[7]
+	    }
+	    Device::ScreenXLow => {
+		self.screen[8]
+	    }
+	    Device::ScreenYHigh => {
+		self.screen[9]
+	    }
+	    Device::ScreenYLow => {
+		self.screen[10]
+	    }
+	    _ => todo!()
 	}
     }
 
-    fn read(&mut self) -> u8 {
-	let a = self.st[self.p-self.k];
-	// check keep mode bit, on keep mode, global pointer doesn't change but keep mode relative pointer does
-	if !self.keep_mode {
-	    self.p -= 1;
-	} else {
-	    self.k += 1;
-	}
-	a
-    }
-
-    fn write(&mut self, data: u8) {
-	self.st[self.p] = data;
-	self.p += 1;
+    fn read_short(&self, device: u8) -> u16 {
+	let high = self.read(device) as u16;
+	let low = self.read(device + 1) as u16;
+	high*256 + low
     }
 }
 
@@ -211,18 +258,92 @@ struct MachineState {
     rst: Stack,
     mem: Vec<u8>,
     pc: u16,
+    devices: Devices
+}
+
+impl MachineState {
+    fn from_code(code: Vec<u8>) -> Self {
+	let mut mem: Vec<u8> = vec![0; 65536];
+	mem[0x0100..0x0100+code.len()].copy_from_slice(&code);
+	MachineState {
+	    wst: Stack::new(),
+	    rst: Stack::new(),
+	    mem,
+	    pc: 0x0100,
+	    devices: Devices::default(),
+	}
+    }
+    
+    fn from_file(file: &str) -> GameResult<MachineState> {
+	match MachineState::load_file(file) {
+	    Ok(code) => {
+		Ok(execute(code))
+	    }
+	    Err(msg) => Err(ggez::GameError::FilesystemError("Can't load file".to_string()))
+	}
+    }
+    fn load_file(file: &str) -> Result<MachineState, std::io::Error> {
+	let mut file = File::open(file)?;
+	let mut buffer = Vec::new();
+	file.read_to_end(&mut buffer)?;
+	let mut mem: Vec<u8> = vec![0; 65536];
+        mem[0x0100..0x0100+buffer.len()].copy_from_slice(&buffer);
+	Ok(MachineState {
+	    wst: Stack::new(),
+	    rst: Stack::new(),
+	    mem,
+	    pc: 0x0100,
+	    devices: Devices::default(),
+	})
+    }
+}
+
+impl event::EventHandler<ggez::GameError> for MachineState {
+    fn update(&mut self, _ctx: &mut Context) -> GameResult {
+	Ok(())
+    }
+
+    fn draw(&mut self, ctx: &mut Context) -> GameResult {
+	graphics::clear(ctx, [0.0, 0.0, 0.0, 1.0].into());
+
+	let image_bg = Image::from_rgba8(ctx, SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16, &self.devices.screen_buffer_bg)?;
+	image_bg.draw(ctx, DrawParam::new())?;
+	
+	let image_fg = Image::from_rgba8(ctx, SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16, &self.devices.screen_buffer_fg)?;
+	image_fg.draw(ctx, DrawParam::new())?;
+
+	graphics::present(ctx)?;
+	Ok(())
+    }
+}
+
+fn main() -> GameResult {
+    let cb = ggez::ContextBuilder::new("eresma", "aarroyoc");
+    let cb = cb.window_setup(WindowSetup {
+	title: "Eresma - UXN/Varvara Computer".to_string(),
+	..WindowSetup::default()
+    });
+    let cb = cb.window_mode(WindowMode {
+	width: 512.0,
+	height: 320.0,
+	..WindowMode::default()
+    });
+    let (mut ctx, event_loop) = cb.build()?;
+    graphics::set_default_filter(&mut ctx, graphics::FilterMode::Nearest);
+    let state = MachineState::from_file("roms/hello-pixels.rom")?;
+    event::run(ctx, event_loop, state)
 }
 
 fn is_return_mode(opcode: u8) -> bool {
     (opcode > 0x40 && opcode < 0x80) || opcode >= 0xc0
 }
 
-fn execute(code: Vec<u8>) -> MachineState {
-    let mut real_wst = Stack::new();
-    let mut real_rst = Stack::new();
-    let mut mem: Vec<u8> = vec![0; 65536];
-    mem[0x0100..0x0100+code.len()].copy_from_slice(&code);
-    let mut pc = 0x0100;
+fn execute(state: MachineState) -> MachineState {
+    let mut real_wst = state.wst.clone();
+    let mut real_rst = state.rst.clone();
+    let mut mem = state.mem.clone();
+    let mut pc = state.pc as usize;
+    let mut devices = state.devices.clone();
     loop {
 	let (wst, rst) = if is_return_mode(mem[pc]) {
 	    (&mut real_rst, &mut real_wst)
@@ -238,6 +359,7 @@ fn execute(code: Vec<u8>) -> MachineState {
 		    rst: real_rst.clone(),
 		    mem,
 		    pc: pc as u16,
+		    devices: devices.clone(),
 		};
 	    },
 	    Instruction::LIT | Instruction::LITr => {
@@ -387,14 +509,14 @@ fn execute(code: Vec<u8>) -> MachineState {
 	    }
 	    Instruction::DEI => {
 		let device = wst.read();
-		let val = device_read(Device::from(device));
+		let val = devices.read(device);
 		wst.write(val);
 		pc += 1;
 	    }
 	    Instruction::DEO => {
 		let device = wst.read();
 		let val = wst.read();
-		device_write(val, Device::from(device));
+		devices.write(val, device);
 		pc += 1;
 	    },
 	    Instruction::ADD | Instruction::ADDk => {
@@ -448,29 +570,37 @@ fn execute(code: Vec<u8>) -> MachineState {
 		wst.write(c);
 		pc += 1;
 	    }
-	    /*Instruction::ADD2 => {
-		let a: u16 = wst[wst_pointer-4] as u16 * 256 + wst[wst_pointer-3] as u16;
-		let b: u16 = wst[wst_pointer-2] as u16 * 256 + wst[wst_pointer-1] as u16;
-		let sum = a + b;
-		wst[wst_pointer-4] = (sum / 256) as u8;
-		wst[wst_pointer-3] = (sum % 256) as u8;
-		wst_pointer -= 2;
+	    Instruction::ADD2 => {
+		let b = wst.read_short();
+		let a = wst.read_short();
+		let c = a + b;
+		wst.write_short(c);
 		pc += 1;
-	    }*/
+	    }
+	    Instruction::INC2 => {
+		let a = wst.read_short();
+		wst.write_short(a + 1);
+		pc += 1;
+	    }
+	    Instruction::DEI2 => {
+		let device = wst.read();
+		let val = devices.read_short(device);
+		wst.write_short(val);
+		pc += 1;
+	    }
+	    Instruction::DEO2 => {
+		let device = wst.read();
+		let val = wst.read_short();
+		devices.write_short(val, device);
+		pc += 1;
+	    }
 	}
     }
 }
 
-fn device_read(device: Device) -> u8 {
-    unimplemented!();
-}
-
-fn device_write(val: u8, device: Device) {
-    match device {
-	Device::ConsoleWrite => {
-	    print!("{}", val as char);
-	}
-    }
+fn execute_test(code: Vec<u8>) -> MachineState {
+    let state = MachineState::from_code(code);
+    execute(state)
 }
 
 #[test]
@@ -481,7 +611,7 @@ fn lit() {
     let mut memory = vec![0; 65536];
     memory[0x0100] = 0x80;
     memory[0x0101] = 0x05;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(memory, state.mem);
 }
@@ -494,7 +624,7 @@ fn lit2() {
     let mut memory = vec![0; 65536];
     memory[0x0100] = 0x80;
     memory[0x0101] = 0x05;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(memory, state.mem);
 }
@@ -508,7 +638,7 @@ fn inc() {
     memory[0x0100] = 0x80;
     memory[0x0101] = 0x05;
     memory[0x0102] = 0x01;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(memory, state.mem);
 }
@@ -519,7 +649,7 @@ fn inc_keep() {
     let mut wst = vec![0; 256];
     wst[0] = 0x05;
     wst[1] = 0x06;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(2, state.wst.p);
 }
@@ -530,7 +660,7 @@ fn inc_return() {
     let wst = vec![0; 256];
     let mut rst = vec![0; 256];
     rst[0] = 0x06;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(0, state.wst.p);
     assert_eq!(rst, state.rst.st);
@@ -544,7 +674,7 @@ fn inc_keep_return() {
     let mut rst = vec![0; 256];
     rst[0] = 0x05; 
     rst[1] = 0x06;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(0, state.wst.p);
     assert_eq!(rst, state.rst.st);
@@ -557,7 +687,7 @@ fn pop() {
     let mut wst = vec![0; 256];
     wst[0] = 0x12;
     wst[1] = 0x34; 
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -568,7 +698,7 @@ fn nip() {
     let mut wst = vec![0; 256];
     wst[0] = 0x34;
     wst[1] = 0x34;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -579,7 +709,7 @@ fn swp() {
     let mut wst = vec![0; 256];
     wst[0] = 0x34;
     wst[1] = 0x12;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(2, state.wst.p);
 }
@@ -590,7 +720,7 @@ fn add() {
     let mut wst = vec![0; 256];
     wst[0] = 0x12 + 0x34;
     wst[1] = 0x34;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -601,7 +731,7 @@ fn sub() {
     let mut wst = vec![0; 256];
     wst[0] = 0x34 - 0x12;
     wst[1] = 0x12;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -614,7 +744,7 @@ fn add2() {
     wst[1] = 0x0c;
     wst[2] = 0x00;
     wst[3] = 0x08;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(2, state.wst.p);
 }
@@ -626,7 +756,7 @@ fn rot() {
     wst[0] = 0x34;
     wst[1] = 0x56;
     wst[2] = 0x12;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
 }
@@ -638,7 +768,7 @@ fn dup() {
     wst[0] = 0x12;
     wst[1] = 0x34;
     wst[2] = 0x34;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
 }
@@ -650,7 +780,7 @@ fn ovr() {
     wst[0] = 0x12;
     wst[1] = 0x34;
     wst[2] = 0x12;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
 }
@@ -661,7 +791,7 @@ fn equ() {
     let mut wst = vec![0; 256];
     wst[0] = 0x01;
     wst[1] = 0x12;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -672,7 +802,7 @@ fn equ_() {
     let mut wst = vec![0; 256];
     wst[0] = 0x00;
     wst[1] = 0x13;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -683,7 +813,7 @@ fn neq() {
     let mut wst = vec![0; 256];
     wst[0] = 0x01;
     wst[1] = 0x34;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -694,7 +824,7 @@ fn neq_() {
     let mut wst = vec![0; 256];
     wst[0] = 0x00;
     wst[1] = 0x12;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -705,7 +835,7 @@ fn gth() {
     let mut wst = vec![0; 256];
     wst[0] = 0x00;
     wst[1] = 0x34;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -716,7 +846,7 @@ fn gth_() {
     let mut wst = vec![0; 256];
     wst[0] = 0x01;
     wst[1] = 0x12;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -727,7 +857,7 @@ fn lth() {
     let mut wst = vec![0; 256];
     wst[0] = 0x00;
     wst[1] = 0x01;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -738,7 +868,7 @@ fn lth_() {
     let mut wst = vec![0; 256];
     wst[0] = 0x01;
     wst[1] = 0x00;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -749,7 +879,7 @@ fn jmp() {
     let mut wst = vec![0; 256];
     wst[0] = 0x55;
     wst[1] = 0x34;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
     assert_eq!(0x0100 + 0x02 + 0x34 + 0x01, state.pc);
@@ -761,7 +891,7 @@ fn jcn() {
     let mut wst = vec![0; 256];
     wst[0] = 0x01;
     wst[1] = 0x34;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(0, state.wst.p);
     assert_eq!(0x0100 + 0x02 + 0x34 + 0x01, state.pc);
@@ -775,7 +905,7 @@ fn jsr() {
     wst[1] = 0x34;
     let mut rst = vec![0; 256];
     rst[0] = 0x03;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
     assert_eq!(0x0100 + 0x02 + 0x34 + 0x01, state.pc);
@@ -790,7 +920,7 @@ fn sth() {
     wst[1] = 0x34;
     let mut rst = vec![0; 256];
     rst[0] = 0x34;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
     assert_eq!(rst, state.rst.st);
@@ -801,7 +931,7 @@ fn ldz_and_stz() {
     let code = vec![0xa0, 0x50, 0x00, 0x11, 0x80, 0x00, 0x10];
     let mut wst = vec![0; 256];
     wst[0] = 0x50;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
 }
 
@@ -810,7 +940,7 @@ fn ldr_and_str() {
     let code = vec![0xa0, 0x50, 0x10, 0x13, 0x80, 0x07, 0x12];
     let mut wst = vec![0; 256];
     wst[0] = 0x50;
-    let state = execute(code);
+    let state = execute_test(code);
     dbg!(state.mem[0x0113]);
     assert_eq!(wst, state.wst.st);
 }
@@ -822,7 +952,7 @@ fn mul_keep() {
     wst[0] = 0x50;
     wst[1] = 0x02;
     wst[2] = 0xa0;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
 }
@@ -833,7 +963,7 @@ fn and() {
     let mut wst = vec![0; 256];
     wst[0] = 0x00;
     wst[1] = 0x0f;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -845,7 +975,7 @@ fn ora_keep() {
     wst[0] = 0xf0;
     wst[1] = 0xff;
     wst[2] = 0xff;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
 }
@@ -857,7 +987,7 @@ fn eor_keep() {
     wst[0] = 0xf0;
     wst[1] = 0xff;
     wst[2] = 0x0f;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
 }
@@ -868,7 +998,7 @@ fn sft() {
     let mut wst = vec![0; 256];
     wst[0] = 0x68;
     wst[1] = 0x10;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
 }
@@ -880,7 +1010,7 @@ fn sft_keep() {
     wst[0] = 0x34;
     wst[1] = 0x33;
     wst[2] = 0x30;
-    let state = execute(code);
+    let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
 }

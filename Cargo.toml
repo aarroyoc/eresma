@@ -6,7 +6,5 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-skia-safe = { version = "0", features = ["x11"] }
-glutin = "0.28.0"
-gl-rs = { package = "gl", version = "0.14.0" }
+ggez = "0.7.0"
 num_enum = "0.5.7"
