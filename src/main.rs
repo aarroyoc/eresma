@@ -1,10 +1,10 @@
-use std::io::prelude::*;
+#![allow(clippy::upper_case_acronyms)]
 use std::fs::File;
+use std::io::prelude::*;
 
-use glam::*;
-use ggez::event;
-use ggez::graphics::{self,*};
 use ggez::conf::{WindowMode, WindowSetup};
+use ggez::event;
+use ggez::graphics::{self, *};
 use ggez::{Context, GameResult};
 use num_enum::FromPrimitive;
 
@@ -126,7 +126,7 @@ enum Device {
 
 const SCREEN_WIDTH: usize = 512;
 const SCREEN_HEIGHT: usize = 320;
-const SCREEN_SIZE: usize = (SCREEN_WIDTH*SCREEN_HEIGHT*4) as usize;
+const SCREEN_SIZE: usize = (SCREEN_WIDTH * SCREEN_HEIGHT * 4) as usize;
 
 #[derive(Clone)]
 struct Devices {
@@ -138,118 +138,130 @@ struct Devices {
 
 impl Default for Devices {
     fn default() -> Self {
-	Devices {
-	    system: [0; 16],
-	    screen: [0; 16],
-	    screen_buffer_bg: vec![0; SCREEN_SIZE],
-	    screen_buffer_fg: vec![0; SCREEN_SIZE],
-	}
+        Devices {
+            system: [0; 16],
+            screen: [0; 16],
+            screen_buffer_bg: vec![0; SCREEN_SIZE],
+            screen_buffer_fg: vec![0; SCREEN_SIZE],
+        }
     }
 }
 
 impl Devices {
     fn write(&mut self, val: u8, device: u8) {
-	match Device::from(device) {
-	    Device::SystemRedHigh => {
-		self.system[8] = val;
-	    }
-	    Device::SystemRedLow => {
-		self.system[9] = val;
-	    }
-	    Device::SystemGreenHigh => {
-		self.system[10] = val;
-	    }
-    	    Device::SystemGreenLow => {
-		self.system[11] = val;
-	    }
-    	    Device::SystemBlueHigh => {
-		self.system[12] = val;
-	    }
-    	    Device::SystemBlueLow => {
-		self.system[13] = val;
-	    }
-	    Device::ConsoleWrite => {
-		print!("{}", val as char);
-	    }
-	    Device::ScreenXHigh => {
-		self.screen[7] = val;
-	    }
-	    Device::ScreenXLow => {
-		self.screen[8] = val;
-	    }
-	    Device::ScreenYHigh => {
-		self.screen[9] = val;
-	    }
-	    Device::ScreenYLow => {
-		self.screen[10] = val;
-	    }
-	    Device::ScreenPixel => {
-		let x: u16 = (self.screen[7] as u16)*256 + self.screen[8] as u16;
-		let y: u16 = (self.screen[9] as u16)*256 + self.screen[10] as u16;
-		let color0 = [(self.system[8] >> 4) | (self.system[8] >> 4) << 4, (self.system[10] >> 4) | (self.system[10] >> 4) << 4, (self.system[12] >> 4) | (self.system[12] >> 4) << 4, 0xff];
-		let color1 = [(self.system[8] << 4) | (self.system[8] << 4) >> 4, (self.system[10] << 4) | (self.system[10] << 4) >> 4, (self.system[12] << 4) | (self.system[12] << 4) >> 4, 0xff];
-		let color2 = [(self.system[9] >> 4) | (self.system[9] >> 4) << 4, (self.system[11] >> 4) | (self.system[11] >> 4) << 4, (self.system[13] >> 4) | (self.system[13] >> 4) << 4, 0xff];
-		let color3 = [(self.system[9] << 4) | (self.system[9] << 4) >> 4, (self.system[11] << 4) | (self.system[11] << 4) >> 4, (self.system[13] << 4) | (self.system[13] << 4) >> 4, 0xff];
-		match val {
-		    0x00 => self.draw_screen_bg(x, y, color0),
-		    0x01 => self.draw_screen_bg(x, y, color1),
-		    0x02 => self.draw_screen_bg(x, y, color2),
-		    0x03 => self.draw_screen_bg(x, y, color3),
-		    0x40 => self.draw_screen_fg(x, y, color0),
-		    0x41 => self.draw_screen_fg(x, y, color1),
-		    0x42 => self.draw_screen_fg(x, y, color2),
-		    0x43 => self.draw_screen_fg(x, y, color3),
-		    _ => {}
-		}
-	    }
-	    _ => todo!()
-	}
+        match Device::from(device) {
+            Device::SystemRedHigh => {
+                self.system[8] = val;
+            }
+            Device::SystemRedLow => {
+                self.system[9] = val;
+            }
+            Device::SystemGreenHigh => {
+                self.system[10] = val;
+            }
+            Device::SystemGreenLow => {
+                self.system[11] = val;
+            }
+            Device::SystemBlueHigh => {
+                self.system[12] = val;
+            }
+            Device::SystemBlueLow => {
+                self.system[13] = val;
+            }
+            Device::ConsoleWrite => {
+                print!("{}", val as char);
+            }
+            Device::ScreenXHigh => {
+                self.screen[7] = val;
+            }
+            Device::ScreenXLow => {
+                self.screen[8] = val;
+            }
+            Device::ScreenYHigh => {
+                self.screen[9] = val;
+            }
+            Device::ScreenYLow => {
+                self.screen[10] = val;
+            }
+            Device::ScreenPixel => {
+                let x: u16 = (self.screen[7] as u16) * 256 + self.screen[8] as u16;
+                let y: u16 = (self.screen[9] as u16) * 256 + self.screen[10] as u16;
+                let color0 = [
+                    (self.system[8] >> 4) | (self.system[8] >> 4) << 4,
+                    (self.system[10] >> 4) | (self.system[10] >> 4) << 4,
+                    (self.system[12] >> 4) | (self.system[12] >> 4) << 4,
+                    0xff,
+                ];
+                let color1 = [
+                    (self.system[8] << 4) | (self.system[8] << 4) >> 4,
+                    (self.system[10] << 4) | (self.system[10] << 4) >> 4,
+                    (self.system[12] << 4) | (self.system[12] << 4) >> 4,
+                    0xff,
+                ];
+                let color2 = [
+                    (self.system[9] >> 4) | (self.system[9] >> 4) << 4,
+                    (self.system[11] >> 4) | (self.system[11] >> 4) << 4,
+                    (self.system[13] >> 4) | (self.system[13] >> 4) << 4,
+                    0xff,
+                ];
+                let color3 = [
+                    (self.system[9] << 4) | (self.system[9] << 4) >> 4,
+                    (self.system[11] << 4) | (self.system[11] << 4) >> 4,
+                    (self.system[13] << 4) | (self.system[13] << 4) >> 4,
+                    0xff,
+                ];
+                match val {
+                    0x00 => self.draw_screen_bg(x, y, color0),
+                    0x01 => self.draw_screen_bg(x, y, color1),
+                    0x02 => self.draw_screen_bg(x, y, color2),
+                    0x03 => self.draw_screen_bg(x, y, color3),
+                    0x40 => self.draw_screen_fg(x, y, color0),
+                    0x41 => self.draw_screen_fg(x, y, color1),
+                    0x42 => self.draw_screen_fg(x, y, color2),
+                    0x43 => self.draw_screen_fg(x, y, color3),
+                    _ => {}
+                }
+            }
+            _ => todo!(),
+        }
     }
 
     fn draw_screen_bg(&mut self, x: u16, y: u16, color: [u8; 4]) {
-	let base: usize = ((x as usize)+(y as usize * SCREEN_HEIGHT))*4;
-	self.screen_buffer_bg[base] = color[0];
-	self.screen_buffer_bg[base+1] = color[1];
-	self.screen_buffer_bg[base+2] = color[2];
-	self.screen_buffer_bg[base+3] = color[3];
+        let base: usize = ((x as usize) + (y as usize * SCREEN_HEIGHT)) * 4;
+        self.screen_buffer_bg[base] = color[0];
+        self.screen_buffer_bg[base + 1] = color[1];
+        self.screen_buffer_bg[base + 2] = color[2];
+        self.screen_buffer_bg[base + 3] = color[3];
     }
 
     fn draw_screen_fg(&mut self, x: u16, y: u16, color: [u8; 4]) {
-	let base: usize = ((x as usize)+(y as usize * SCREEN_HEIGHT))*4;
-	self.screen_buffer_fg[base] = color[0];
-	self.screen_buffer_fg[base+1] = color[1];
-	self.screen_buffer_fg[base+2] = color[2];
-	self.screen_buffer_fg[base+3] = color[3];
+        let base: usize = ((x as usize) + (y as usize * SCREEN_HEIGHT)) * 4;
+        self.screen_buffer_fg[base] = color[0];
+        self.screen_buffer_fg[base + 1] = color[1];
+        self.screen_buffer_fg[base + 2] = color[2];
+        self.screen_buffer_fg[base + 3] = color[3];
     }
 
     fn write_short(&mut self, val: u16, device: u8) {
-	let next_device = device + 1;
-	self.write((val / 256) as u8, device);
-	self.write((val % 256) as u8, next_device);
+        let next_device = device + 1;
+        self.write((val / 256) as u8, device);
+        self.write((val % 256) as u8, next_device);
     }
 
     fn read(&self, device: u8) -> u8 {
-	match Device::from(device) {
-	    Device::ScreenXHigh => {
-		self.screen[7]
-	    }
-	    Device::ScreenXLow => {
-		self.screen[8]
-	    }
-	    Device::ScreenYHigh => {
-		self.screen[9]
-	    }
-	    Device::ScreenYLow => {
-		self.screen[10]
-	    }
-	    _ => todo!()
-	}
+        match Device::from(device) {
+            Device::ScreenXHigh => self.screen[7],
+            Device::ScreenXLow => self.screen[8],
+            Device::ScreenYHigh => self.screen[9],
+            Device::ScreenYLow => self.screen[10],
+            _ => todo!(),
+        }
     }
 
     fn read_short(&self, device: u8) -> u16 {
-	let high = self.read(device) as u16;
-	let low = self.read(device + 1) as u16;
-	high*256 + low
+        let high = self.read(device) as u16;
+        let low = self.read(device + 1) as u16;
+        high * 256 + low
     }
 }
 
@@ -258,75 +270,85 @@ struct MachineState {
     rst: Stack,
     mem: Vec<u8>,
     pc: u16,
-    devices: Devices
+    devices: Devices,
 }
 
 impl MachineState {
     fn from_code(code: Vec<u8>) -> Self {
-	let mut mem: Vec<u8> = vec![0; 65536];
-	mem[0x0100..0x0100+code.len()].copy_from_slice(&code);
-	MachineState {
-	    wst: Stack::new(),
-	    rst: Stack::new(),
-	    mem,
-	    pc: 0x0100,
-	    devices: Devices::default(),
-	}
+        let mut mem: Vec<u8> = vec![0; 65536];
+        mem[0x0100..0x0100 + code.len()].copy_from_slice(&code);
+        MachineState {
+            wst: Stack::new(),
+            rst: Stack::new(),
+            mem,
+            pc: 0x0100,
+            devices: Devices::default(),
+        }
     }
-    
+
     fn from_file(file: &str) -> GameResult<MachineState> {
-	match MachineState::load_file(file) {
-	    Ok(code) => {
-		Ok(execute(code))
-	    }
-	    Err(msg) => Err(ggez::GameError::FilesystemError("Can't load file".to_string()))
-	}
+        match MachineState::load_file(file) {
+            Ok(code) => Ok(execute(code)),
+            Err(_msg) => Err(ggez::GameError::FilesystemError(
+                "Can't load file".to_string(),
+            )),
+        }
     }
     fn load_file(file: &str) -> Result<MachineState, std::io::Error> {
-	let mut file = File::open(file)?;
-	let mut buffer = Vec::new();
-	file.read_to_end(&mut buffer)?;
-	let mut mem: Vec<u8> = vec![0; 65536];
-        mem[0x0100..0x0100+buffer.len()].copy_from_slice(&buffer);
-	Ok(MachineState {
-	    wst: Stack::new(),
-	    rst: Stack::new(),
-	    mem,
-	    pc: 0x0100,
-	    devices: Devices::default(),
-	})
+        let mut file = File::open(file)?;
+        let mut buffer = Vec::new();
+        file.read_to_end(&mut buffer)?;
+        let mut mem: Vec<u8> = vec![0; 65536];
+        mem[0x0100..0x0100 + buffer.len()].copy_from_slice(&buffer);
+        Ok(MachineState {
+            wst: Stack::new(),
+            rst: Stack::new(),
+            mem,
+            pc: 0x0100,
+            devices: Devices::default(),
+        })
     }
 }
 
 impl event::EventHandler<ggez::GameError> for MachineState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
-	Ok(())
+        Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-	graphics::clear(ctx, [0.0, 0.0, 0.0, 1.0].into());
+        graphics::clear(ctx, [0.0, 0.0, 0.0, 1.0].into());
 
-	let image_bg = Image::from_rgba8(ctx, SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16, &self.devices.screen_buffer_bg)?;
-	image_bg.draw(ctx, DrawParam::new())?;
-	
-	let image_fg = Image::from_rgba8(ctx, SCREEN_WIDTH as u16, SCREEN_HEIGHT as u16, &self.devices.screen_buffer_fg)?;
-	image_fg.draw(ctx, DrawParam::new())?;
+        let image_bg = Image::from_rgba8(
+            ctx,
+            SCREEN_WIDTH as u16,
+            SCREEN_HEIGHT as u16,
+            &self.devices.screen_buffer_bg,
+        )?;
+        image_bg.draw(ctx, DrawParam::new())?;
 
-	graphics::present(ctx)?;
-	Ok(())
+        let image_fg = Image::from_rgba8(
+            ctx,
+            SCREEN_WIDTH as u16,
+            SCREEN_HEIGHT as u16,
+            &self.devices.screen_buffer_fg,
+        )?;
+        image_fg.draw(ctx, DrawParam::new())?;
+
+        graphics::present(ctx)?;
+        Ok(())
     }
 }
 
 fn main() -> GameResult {
     let cb = ggez::ContextBuilder::new("eresma", "aarroyoc");
     let cb = cb.window_setup(WindowSetup {
-	title: "Eresma - UXN/Varvara Computer".to_string(),
-	..WindowSetup::default()
+        title: "Eresma - UXN/Varvara Computer".to_string(),
+        ..WindowSetup::default()
     });
     let cb = cb.window_mode(WindowMode {
-	width: 512.0,
-	height: 320.0,
-	..WindowMode::default()
+        width: 512.0,
+        height: 320.0,
+        ..WindowMode::default()
     });
     let (mut ctx, event_loop) = cb.build()?;
     graphics::set_default_filter(&mut ctx, graphics::FilterMode::Nearest);
@@ -338,6 +360,7 @@ fn is_return_mode(opcode: u8) -> bool {
     (opcode > 0x40 && opcode < 0x80) || opcode >= 0xc0
 }
 
+#[allow(clippy::redundant_clone)]
 fn execute(state: MachineState) -> MachineState {
     let mut real_wst = state.wst.clone();
     let mut real_rst = state.rst.clone();
@@ -345,259 +368,244 @@ fn execute(state: MachineState) -> MachineState {
     let mut pc = state.pc as usize;
     let mut devices = state.devices.clone();
     loop {
-	let (wst, rst) = if is_return_mode(mem[pc]) {
-	    (&mut real_rst, &mut real_wst)
-	} else {
-	    (&mut real_wst, &mut real_rst)
-	};
+        let (wst, rst) = if is_return_mode(mem[pc]) {
+            (&mut real_rst, &mut real_wst)
+        } else {
+            (&mut real_wst, &mut real_rst)
+        };
 
-	wst.set_current_opcode(mem[pc]);
-	match Instruction::from(mem[pc]) {
-	    Instruction::BRK => {
-		return MachineState {
-		    wst: real_wst.clone(),
-		    rst: real_rst.clone(),
-		    mem,
-		    pc: pc as u16,
-		    devices: devices.clone(),
-		};
-	    },
-	    Instruction::LIT | Instruction::LITr => {
-		wst.write(mem[pc+1]);
-		pc += 2;
-	    },
-	    Instruction::LIT2 | Instruction::LIT2r => {
-		wst.write(mem[pc+1]);
-		wst.write(mem[pc+2]);
-		pc += 3;
-	    },
-	    Instruction::INC | Instruction::INCk | Instruction::INCr | Instruction::INCkr => {
-		let a = wst.read();
-		wst.write(a + 1);
-		pc += 1;
-	    },
-	    Instruction::POP | Instruction::POPk | Instruction::POPr | Instruction::POPkr => {
-		wst.read();
-		pc += 1;
-	    },
-	    Instruction::NIP | Instruction::NIPk | Instruction::NIPr | Instruction::NIPkr => {
-		let b = wst.read();
-		let _ = wst.read();
-		wst.write(b);
-		pc += 1;
-	    },
-	    Instruction::SWP | Instruction::SWPk | Instruction::SWPr | Instruction::SWPkr => {
-		let b = wst.read();
-		let a = wst.read();
-		wst.write(b);
-		wst.write(a);
-		pc += 1;
-	    },
-	    Instruction::ROT | Instruction::ROTk | Instruction::ROTr | Instruction::ROTkr => {
-		let c = wst.read();
-		let b = wst.read();
-		let a = wst.read();
-		wst.write(b);
-		wst.write(c);
-		wst.write(a);
-		pc += 1;
-	    },
-	    Instruction::DUP | Instruction::DUPk | Instruction::DUPr | Instruction::DUPkr => {
-		let a = wst.read();
-		wst.write(a);
-		wst.write(a);
-		pc += 1;
-	    },
-	    Instruction::OVR | Instruction::OVRk | Instruction::OVRr | Instruction::OVRkr => {
-		let b = wst.read();
-		let a = wst.read();
-		wst.write(a);
-		wst.write(b);
-		wst.write(a);
-		pc += 1;
-	    }
-	    Instruction::EQU | Instruction::EQUk | Instruction::EQUr | Instruction::EQUkr => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = if a == b {
-		    0x01
-		} else {
-		    0x00
-		};
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::NEQ | Instruction::NEQk | Instruction::NEQr | Instruction::NEQkr => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = if a == b {
-		    0x00
-		} else {
-		    0x01
-		};
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::GTH | Instruction::GTHk | Instruction::GTHr | Instruction::GTHkr => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = if a < b {
-		    0x00
-		} else {
-		    0x01
-		};
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::LTH | Instruction::LTHk | Instruction::LTHr | Instruction::LTHkr => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = if a > b {
-		    0x01
-		} else {
-		    0x00
-		};
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::JMP | Instruction::JMPk => {
-		let addr = wst.read();
-		pc = (pc as i16 + addr as i16) as usize;
-	    }
-	    Instruction::JCN | Instruction::JCNk => {
-		let addr = wst.read();
-		let cond = wst.read();
-		pc = if cond  == 0x00 {
-		    pc + 0x01
-		} else {
-		    (pc as i16 + addr as i16) as usize
-		};
-	    }
-	    Instruction::JSR | Instruction::JSRk => {
-		let addr = wst.read();
-		rst.write((pc - 0x0100) as u8);
-		pc = (pc as i16 + addr as i16) as usize;
-	    }
-	    Instruction::STH | Instruction::STHk => {
-		let a = wst.read();
-		rst.write(a);
-		pc += 1;
-	    }
-	    Instruction::LDZ => {
-		let addr = wst.read();
-		let val = mem[addr as usize];
-		wst.write(val);
-		pc += 1;
-	    }
-	    Instruction::STZ => {
-		let addr = wst.read();
-		let val = wst.read();
-		mem[addr as usize] = val;
-		pc += 1;
-	    }
-	    Instruction::LDR => {
-		let addr = wst.read() as i16;
-		let value = mem[((pc as i16) + addr) as usize];
-		wst.write(value);
-		pc += 1;
-	    }
-	    Instruction::STR => {
-		let addr = wst.read() as i16;
-		let val = wst.read();
-		mem[((pc as i16) + addr) as usize] = val;
-		pc += 1;
-	    }
-	    Instruction::DEI => {
-		let device = wst.read();
-		let val = devices.read(device);
-		wst.write(val);
-		pc += 1;
-	    }
-	    Instruction::DEO => {
-		let device = wst.read();
-		let val = wst.read();
-		devices.write(val, device);
-		pc += 1;
-	    },
-	    Instruction::ADD | Instruction::ADDk => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = a+b;
-		wst.write(c);
-		pc += 1;
-	    },
-	    Instruction::SUB | Instruction::SUBk => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = a-b;
-		wst.write(c);
-		pc += 1;
-	    },
-	    Instruction::MUL | Instruction::MULk => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = a*b;
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::AND | Instruction::ANDk => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = a & b;
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::ORA | Instruction::ORAk => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = a | b;
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::EOR | Instruction::EORk => {
-		let b = wst.read();
-		let a = wst.read();
-		let c = a ^ b;
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::SFT | Instruction::SFTk => {
-		let shift = wst.read();
-		let a = wst.read();
-		let left = shift / 16;
-		let right = shift % 16;
-		let c = (a >> right) << left;
-		wst.write(c);
-		pc += 1;
-	    }
-	    Instruction::ADD2 => {
-		let b = wst.read_short();
-		let a = wst.read_short();
-		let c = a + b;
-		wst.write_short(c);
-		pc += 1;
-	    }
-	    Instruction::INC2 => {
-		let a = wst.read_short();
-		wst.write_short(a + 1);
-		pc += 1;
-	    }
-	    Instruction::DEI2 => {
-		let device = wst.read();
-		let val = devices.read_short(device);
-		wst.write_short(val);
-		pc += 1;
-	    }
-	    Instruction::DEO2 => {
-		let device = wst.read();
-		let val = wst.read_short();
-		devices.write_short(val, device);
-		pc += 1;
-	    }
-	}
+        wst.set_current_opcode(mem[pc]);
+        match Instruction::from(mem[pc]) {
+            Instruction::BRK => {
+                return MachineState {
+                    wst: real_wst.clone(),
+                    rst: real_rst.clone(),
+                    mem,
+                    pc: pc as u16,
+                    devices: devices.clone(),
+                };
+            }
+            Instruction::LIT | Instruction::LITr => {
+                wst.write(mem[pc + 1]);
+                pc += 2;
+            }
+            Instruction::LIT2 | Instruction::LIT2r => {
+                wst.write(mem[pc + 1]);
+                wst.write(mem[pc + 2]);
+                pc += 3;
+            }
+            Instruction::INC | Instruction::INCk | Instruction::INCr | Instruction::INCkr => {
+                let a = wst.read();
+                wst.write(a + 1);
+                pc += 1;
+            }
+            Instruction::POP | Instruction::POPk | Instruction::POPr | Instruction::POPkr => {
+                wst.read();
+                pc += 1;
+            }
+            Instruction::NIP | Instruction::NIPk | Instruction::NIPr | Instruction::NIPkr => {
+                let b = wst.read();
+                let _ = wst.read();
+                wst.write(b);
+                pc += 1;
+            }
+            Instruction::SWP | Instruction::SWPk | Instruction::SWPr | Instruction::SWPkr => {
+                let b = wst.read();
+                let a = wst.read();
+                wst.write(b);
+                wst.write(a);
+                pc += 1;
+            }
+            Instruction::ROT | Instruction::ROTk | Instruction::ROTr | Instruction::ROTkr => {
+                let c = wst.read();
+                let b = wst.read();
+                let a = wst.read();
+                wst.write(b);
+                wst.write(c);
+                wst.write(a);
+                pc += 1;
+            }
+            Instruction::DUP | Instruction::DUPk | Instruction::DUPr | Instruction::DUPkr => {
+                let a = wst.read();
+                wst.write(a);
+                wst.write(a);
+                pc += 1;
+            }
+            Instruction::OVR | Instruction::OVRk | Instruction::OVRr | Instruction::OVRkr => {
+                let b = wst.read();
+                let a = wst.read();
+                wst.write(a);
+                wst.write(b);
+                wst.write(a);
+                pc += 1;
+            }
+            Instruction::EQU | Instruction::EQUk | Instruction::EQUr | Instruction::EQUkr => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = if a == b { 0x01 } else { 0x00 };
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::NEQ | Instruction::NEQk | Instruction::NEQr | Instruction::NEQkr => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = if a == b { 0x00 } else { 0x01 };
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::GTH | Instruction::GTHk | Instruction::GTHr | Instruction::GTHkr => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = if a < b { 0x00 } else { 0x01 };
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::LTH | Instruction::LTHk | Instruction::LTHr | Instruction::LTHkr => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = if a > b { 0x01 } else { 0x00 };
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::JMP | Instruction::JMPk => {
+                let addr = wst.read();
+                pc = (pc as i16 + addr as i16) as usize;
+            }
+            Instruction::JCN | Instruction::JCNk => {
+                let addr = wst.read();
+                let cond = wst.read();
+                pc = if cond == 0x00 {
+                    pc + 0x01
+                } else {
+                    (pc as i16 + addr as i16) as usize
+                };
+            }
+            Instruction::JSR | Instruction::JSRk => {
+                let addr = wst.read();
+                rst.write((pc - 0x0100) as u8);
+                pc = (pc as i16 + addr as i16) as usize;
+            }
+            Instruction::STH | Instruction::STHk => {
+                let a = wst.read();
+                rst.write(a);
+                pc += 1;
+            }
+            Instruction::LDZ => {
+                let addr = wst.read();
+                let val = mem[addr as usize];
+                wst.write(val);
+                pc += 1;
+            }
+            Instruction::STZ => {
+                let addr = wst.read();
+                let val = wst.read();
+                mem[addr as usize] = val;
+                pc += 1;
+            }
+            Instruction::LDR => {
+                let addr = wst.read() as i16;
+                let value = mem[((pc as i16) + addr) as usize];
+                wst.write(value);
+                pc += 1;
+            }
+            Instruction::STR => {
+                let addr = wst.read() as i16;
+                let val = wst.read();
+                mem[((pc as i16) + addr) as usize] = val;
+                pc += 1;
+            }
+            Instruction::DEI => {
+                let device = wst.read();
+                let val = devices.read(device);
+                wst.write(val);
+                pc += 1;
+            }
+            Instruction::DEO => {
+                let device = wst.read();
+                let val = wst.read();
+                devices.write(val, device);
+                pc += 1;
+            }
+            Instruction::ADD | Instruction::ADDk => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = a + b;
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::SUB | Instruction::SUBk => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = a - b;
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::MUL | Instruction::MULk => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = a * b;
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::AND | Instruction::ANDk => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = a & b;
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::ORA | Instruction::ORAk => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = a | b;
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::EOR | Instruction::EORk => {
+                let b = wst.read();
+                let a = wst.read();
+                let c = a ^ b;
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::SFT | Instruction::SFTk => {
+                let shift = wst.read();
+                let a = wst.read();
+                let left = shift / 16;
+                let right = shift % 16;
+                let c = (a >> right) << left;
+                wst.write(c);
+                pc += 1;
+            }
+            Instruction::ADD2 => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = a + b;
+                wst.write_short(c);
+                pc += 1;
+            }
+            Instruction::INC2 => {
+                let a = wst.read_short();
+                wst.write_short(a + 1);
+                pc += 1;
+            }
+            Instruction::DEI2 => {
+                let device = wst.read();
+                let val = devices.read_short(device);
+                wst.write_short(val);
+                pc += 1;
+            }
+            Instruction::DEO2 => {
+                let device = wst.read();
+                let val = wst.read_short();
+                devices.write_short(val, device);
+                pc += 1;
+            }
+        }
     }
 }
 
+#[allow(dead_code)]
 fn execute_test(code: Vec<u8>) -> MachineState {
     let state = MachineState::from_code(code);
     execute(state)
@@ -672,7 +680,7 @@ fn inc_keep_return() {
     let code = vec![0xc0, 0x05, 0xc1];
     let wst = vec![0; 256];
     let mut rst = vec![0; 256];
-    rst[0] = 0x05; 
+    rst[0] = 0x05;
     rst[1] = 0x06;
     let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
@@ -686,7 +694,7 @@ fn pop() {
     let code = vec![0xa0, 0x12, 0x34, 0x02];
     let mut wst = vec![0; 256];
     wst[0] = 0x12;
-    wst[1] = 0x34; 
+    wst[1] = 0x34;
     let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
