@@ -212,131 +212,112 @@ impl Devices {
             }
             Device::ScreenSprite => {
                 let address: usize = (self.screen[11] as usize) * 256 + self.screen[12] as usize;
-                let x = self.get_screen_x();
-                let y = self.get_screen_y();
-                let color0 = self.get_color0();
-                let color1 = self.get_color1();
-                let color2 = self.get_color2();
-                let color3 = self.get_color3();
-                for i in 0..8 {
-                    let line = mem[address + i];
-                    let mut mask = 0b10000000;
+                if val > 127 {
+                    self.draw_sprite_2bpp(address, mem, val);
+                } else {
+                    self.draw_sprite_1bpp(address, mem, val);
+                }
+            }
+            _ => todo!(),
+        }
+    }
 
-                    for j in 0..8 {
-                        let pixel = (line & mask) > 0;
-                        mask = mask >> 1;
+    fn get_sprite_color(&self, val: u8) -> [Option<[u8; 4]>; 4] {
+        let color0 = self.get_color0();
+        let color1 = self.get_color1();
+        let color2 = self.get_color2();
+        let color3 = self.get_color3();
+        match val & 0b00001111 {
+            0x00 => [Some(color0), Some(color0), Some(color1), Some(color2)],
+            0x01 => [Some(color0), Some(color1), Some(color2), Some(color3)],
+            0x02 => [Some(color0), Some(color2), Some(color3), Some(color1)],
+            0x03 => [Some(color0), Some(color3), Some(color1), Some(color2)],
+            0x04 => [Some(color1), Some(color0), Some(color1), Some(color2)],
+            0x05 => [None, Some(color1), Some(color2), Some(color3)],
+            0x06 => [Some(color1), Some(color2), Some(color3), Some(color1)],
+            0x07 => [Some(color1), Some(color3), Some(color1), Some(color2)],
+            0x08 => [Some(color2), Some(color0), Some(color1), Some(color2)],
+            0x09 => [Some(color2), Some(color1), Some(color2), Some(color3)],
+            0x0a => [None, Some(color2), Some(color3), Some(color1)],
+            0x0b => [Some(color2), Some(color3), Some(color1), Some(color2)],
+            0x0c => [Some(color3), Some(color0), Some(color1), Some(color2)],
+            0x0d => [Some(color3), Some(color1), Some(color2), Some(color3)],
+            0x0e => [Some(color3), Some(color2), Some(color3), Some(color1)],
+            0x0f => [None, Some(color3), Some(color1), Some(color2)],
+            _ => unreachable!(),
+        }
+    }
 
-                        let i = i as u16;
-                        let sprite_low = val & 0b00001111;
-                        match sprite_low {
-                            0x00 => {
-                                self.draw_screen_fg(x + j, y + i, [0, 0, 0, 0]);
-                            }
-                            0x01 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color1);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color0);
-                                }
-                            }
-                            0x02 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color2);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color0);
-                                }
-                            }
-                            0x03 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color3);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color0);
-                                }
-                            }
-                            0x04 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color0);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color1);
-                                }
-                            }
-                            0x05 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color1);
-                                }
-                            }
-                            0x06 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color2);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color1);
-                                }
-                            }
-                            0x07 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color3);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color1);
-                                }
-                            }
-                            0x08 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color0);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color2);
-                                }
-                            }
-                            0x09 => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color1);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color2);
-                                }
-                            }
-                            0x0a => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color2);
-                                }
-                            }
-                            0x0b => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color3);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color2);
-                                }
-                            }
-                            0x0c => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color0);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color3);
-                                }
-                            }
-                            0x0d => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color1);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color3);
-                                }
-                            }
-                            0x0e => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color2);
-                                } else {
-                                    self.draw_screen_fg(x + j, y + i, color3);
-                                }
-                            }
-                            0x0f => {
-                                if pixel {
-                                    self.draw_screen_fg(x + j, y + i, color3);
-                                }
-                            }
-                            _ => unreachable!(),
+    fn draw_sprite_1bpp(&mut self, address: usize, mem: &Vec<u8>, val: u8) {
+        let x = self.get_screen_x();
+        let y = self.get_screen_y();
+        let sprite_colors = self.get_sprite_color(val);
+        for i in 0..8 {
+            let line = mem[address + i];
+            let mut mask = 0b10000000;
+
+            for j in 0..8 {
+                let pixel = (line & mask) > 0;
+                mask = mask >> 1;
+
+                let i = i as u16;
+
+                if val & 0b00001111 == 0 {
+                    self.draw_screen_fg(x + j, y + i, [0, 0, 0, 0]);
+                } else {
+                    if pixel {
+                        if let Some(color) = sprite_colors[1] {
+                            self.draw_screen_fg(x + j, y + i, color);
+                        }
+                    } else {
+                        if let Some(color) = sprite_colors[0] {
+                            self.draw_screen_fg(x + j, y + i, color);
                         }
                     }
                 }
             }
-            _ => todo!(),
+        }
+    }
+
+    fn draw_sprite_2bpp(&mut self, address: usize, mem: &Vec<u8>, val: u8) {
+        let x = self.get_screen_x();
+        let y = self.get_screen_y();
+        let sprite_colors = self.get_sprite_color(val);
+        for i in 0..8 {
+            let line1 = mem[address + i];
+            let line2 = mem[address + 8 + i];
+            let mut mask = 0b10000000;
+
+            for j in 0..8 {
+                let pixel1 = (line1 & mask) > 0;
+                let pixel2 = (line2 & mask) > 0;
+                mask = mask >> 1;
+
+                let i = i as u16;
+
+                match (pixel1, pixel2) {
+                    (false, false) => {
+                        if let Some(color) = sprite_colors[0] {
+                            self.draw_screen_fg(x + j, y + i, color);
+                        }
+                    }
+                    (false, true) => {
+                        if let Some(color) = sprite_colors[1] {
+                            self.draw_screen_fg(x + j, y + i, color);
+                        }
+                    }
+                    (true, false) => {
+                        if let Some(color) = sprite_colors[2] {
+                            self.draw_screen_fg(x + j, y + i, color);
+                        }
+                    }
+                    (true, true) => {
+                        if let Some(color) = sprite_colors[3] {
+                            self.draw_screen_fg(x + j, y + i, color);
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -510,7 +491,7 @@ fn main() -> GameResult {
     });
     let (mut ctx, event_loop) = cb.build()?;
     graphics::set_default_filter(&mut ctx, graphics::FilterMode::Nearest);
-    let state = MachineState::from_file("roms/hello-sprites.rom")?;
+    let state = MachineState::from_file("roms/hello-2bpp-sprite.rom")?;
     event::run(ctx, event_loop, state)
 }
 
