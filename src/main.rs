@@ -8,8 +8,10 @@ use ggez::graphics::{self, *};
 use ggez::{Context, GameResult};
 use num_enum::FromPrimitive;
 
+mod devices;
 mod stack;
 
+use devices::{Devices, SCREEN_HEIGHT, SCREEN_WIDTH};
 use stack::Stack;
 
 // https://wiki.xxiivv.com/site/uxntal_reference.html
@@ -35,8 +37,6 @@ enum Instruction {
     STH = 0x0f,
     LDZ = 0x10,
     STZ = 0x11,
-    LDR = 0x12,
-    STR = 0x13,
     DEI = 0x16,
     DEO = 0x17,
     ADD = 0x18,
@@ -50,6 +50,7 @@ enum Instruction {
     DEI2 = 0x36,
     DEO2 = 0x37,
     ADD2 = 0x38,
+    MUL2 = 0x3a,
     INCr = 0x41,
     POPr = 0x42,
     NIPr = 0x43,
@@ -61,6 +62,8 @@ enum Instruction {
     NEQr = 0x49,
     GTHr = 0x4a,
     LTHr = 0x4b,
+    MULr = 0x5a,
+    MUL2r = 0x7a,
     LIT = 0x80,
     INCk = 0x81,
     POPk = 0x82,
@@ -85,6 +88,7 @@ enum Instruction {
     EORk = 0x9e,
     SFTk = 0x9f,
     LIT2 = 0xa0,
+    MUL2k = 0xba,
     LITr = 0xc0,
     INCkr = 0xc1,
     POPkr = 0xc2,
@@ -97,311 +101,9 @@ enum Instruction {
     NEQkr = 0xc9,
     GTHkr = 0xca,
     LTHkr = 0xcb,
+    MULkr = 0xda,
     LIT2r = 0xe0,
-}
-
-#[repr(u8)]
-#[derive(FromPrimitive)]
-enum Device {
-    #[num_enum(default)]
-    SystemRedHigh = 0x08,
-    SystemRedLow = 0x09,
-    SystemGreenHigh = 0x0a,
-    SystemGreenLow = 0x0b,
-    SystemBlueHigh = 0x0c,
-    SystemBlueLow = 0x0d,
-    ConsoleWrite = 0x18,
-    ScreenVector = 0x20,
-    ScreenWidth = 0x22,
-    ScreenHeight = 0x24,
-    ScreenAuto = 0x26,
-    ScreenXHigh = 0x28,
-    ScreenXLow = 0x29,
-    ScreenYHigh = 0x2a,
-    ScreenYLow = 0x2b,
-    ScreenAddressHigh = 0x2c,
-    ScreenAddressLow = 0x2d,
-    ScreenPixel = 0x2e,
-    ScreenSprite = 0x2f,
-}
-
-const SCREEN_WIDTH: usize = 512;
-const SCREEN_HEIGHT: usize = 320;
-const SCREEN_SIZE: usize = (SCREEN_WIDTH * SCREEN_HEIGHT * 4) as usize;
-
-#[derive(Clone)]
-struct Devices {
-    system: [u8; 16],
-    screen: [u8; 16],
-    screen_buffer_bg: Vec<u8>,
-    screen_buffer_fg: Vec<u8>,
-}
-
-impl Default for Devices {
-    fn default() -> Self {
-        Devices {
-            system: [0; 16],
-            screen: [0; 16],
-            screen_buffer_bg: vec![0; SCREEN_SIZE],
-            screen_buffer_fg: vec![0; SCREEN_SIZE],
-        }
-    }
-}
-
-impl Devices {
-    fn write(&mut self, val: u8, device: u8, mem: &Vec<u8>) {
-        match Device::from(device) {
-            Device::SystemRedHigh => {
-                self.system[8] = val;
-            }
-            Device::SystemRedLow => {
-                self.system[9] = val;
-            }
-            Device::SystemGreenHigh => {
-                self.system[10] = val;
-            }
-            Device::SystemGreenLow => {
-                self.system[11] = val;
-            }
-            Device::SystemBlueHigh => {
-                self.system[12] = val;
-            }
-            Device::SystemBlueLow => {
-                self.system[13] = val;
-            }
-            Device::ConsoleWrite => {
-                print!("{}", val as char);
-            }
-            Device::ScreenXHigh => {
-                self.screen[7] = val;
-            }
-            Device::ScreenXLow => {
-                self.screen[8] = val;
-            }
-            Device::ScreenYHigh => {
-                self.screen[9] = val;
-            }
-            Device::ScreenYLow => {
-                self.screen[10] = val;
-            }
-            Device::ScreenAddressHigh => {
-                self.screen[11] = val;
-            }
-            Device::ScreenAddressLow => {
-                self.screen[12] = val;
-            }
-            Device::ScreenPixel => {
-                let x: u16 = self.get_screen_x();
-                let y: u16 = self.get_screen_y();
-                let color0 = self.get_color0();
-                let color1 = self.get_color1();
-                let color2 = self.get_color2();
-                let color3 = self.get_color3();
-
-                match val {
-                    0x00 => self.draw_screen_bg(x, y, color0),
-                    0x01 => self.draw_screen_bg(x, y, color1),
-                    0x02 => self.draw_screen_bg(x, y, color2),
-                    0x03 => self.draw_screen_bg(x, y, color3),
-                    0x40 => self.draw_screen_fg(x, y, color0),
-                    0x41 => self.draw_screen_fg(x, y, color1),
-                    0x42 => self.draw_screen_fg(x, y, color2),
-                    0x43 => self.draw_screen_fg(x, y, color3),
-                    _ => {}
-                }
-            }
-            Device::ScreenSprite => {
-                let address: usize = (self.screen[11] as usize) * 256 + self.screen[12] as usize;
-                if val > 127 {
-                    self.draw_sprite_2bpp(address, mem, val);
-                } else {
-                    self.draw_sprite_1bpp(address, mem, val);
-                }
-            }
-            _ => todo!(),
-        }
-    }
-
-    fn get_sprite_color(&self, val: u8) -> [Option<[u8; 4]>; 4] {
-        let color0 = self.get_color0();
-        let color1 = self.get_color1();
-        let color2 = self.get_color2();
-        let color3 = self.get_color3();
-        match val & 0b00001111 {
-            0x00 => [Some(color0), Some(color0), Some(color1), Some(color2)],
-            0x01 => [Some(color0), Some(color1), Some(color2), Some(color3)],
-            0x02 => [Some(color0), Some(color2), Some(color3), Some(color1)],
-            0x03 => [Some(color0), Some(color3), Some(color1), Some(color2)],
-            0x04 => [Some(color1), Some(color0), Some(color1), Some(color2)],
-            0x05 => [None, Some(color1), Some(color2), Some(color3)],
-            0x06 => [Some(color1), Some(color2), Some(color3), Some(color1)],
-            0x07 => [Some(color1), Some(color3), Some(color1), Some(color2)],
-            0x08 => [Some(color2), Some(color0), Some(color1), Some(color2)],
-            0x09 => [Some(color2), Some(color1), Some(color2), Some(color3)],
-            0x0a => [None, Some(color2), Some(color3), Some(color1)],
-            0x0b => [Some(color2), Some(color3), Some(color1), Some(color2)],
-            0x0c => [Some(color3), Some(color0), Some(color1), Some(color2)],
-            0x0d => [Some(color3), Some(color1), Some(color2), Some(color3)],
-            0x0e => [Some(color3), Some(color2), Some(color3), Some(color1)],
-            0x0f => [None, Some(color3), Some(color1), Some(color2)],
-            _ => unreachable!(),
-        }
-    }
-
-    fn draw_sprite_1bpp(&mut self, address: usize, mem: &Vec<u8>, val: u8) {
-        let x = self.get_screen_x();
-        let y = self.get_screen_y();
-        let sprite_colors = self.get_sprite_color(val);
-        for i in 0..8 {
-            let line = mem[address + i];
-            let mut mask = 0b10000000;
-
-            for j in 0..8 {
-                let pixel = (line & mask) > 0;
-                mask = mask >> 1;
-
-                let i = i as u16;
-
-                if val & 0b00001111 == 0 {
-                    self.draw_screen_fg(x + j, y + i, [0, 0, 0, 0]);
-                } else {
-                    if pixel {
-                        if let Some(color) = sprite_colors[1] {
-                            self.draw_screen_fg(x + j, y + i, color);
-                        }
-                    } else {
-                        if let Some(color) = sprite_colors[0] {
-                            self.draw_screen_fg(x + j, y + i, color);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn draw_sprite_2bpp(&mut self, address: usize, mem: &Vec<u8>, val: u8) {
-        let x = self.get_screen_x();
-        let y = self.get_screen_y();
-        let sprite_colors = self.get_sprite_color(val);
-        for i in 0..8 {
-            let line1 = mem[address + i];
-            let line2 = mem[address + 8 + i];
-            let mut mask = 0b10000000;
-
-            for j in 0..8 {
-                let pixel1 = (line1 & mask) > 0;
-                let pixel2 = (line2 & mask) > 0;
-                mask = mask >> 1;
-
-                let i = i as u16;
-
-                match (pixel1, pixel2) {
-                    (false, false) => {
-                        if let Some(color) = sprite_colors[0] {
-                            self.draw_screen_fg(x + j, y + i, color);
-                        }
-                    }
-                    (false, true) => {
-                        if let Some(color) = sprite_colors[1] {
-                            self.draw_screen_fg(x + j, y + i, color);
-                        }
-                    }
-                    (true, false) => {
-                        if let Some(color) = sprite_colors[2] {
-                            self.draw_screen_fg(x + j, y + i, color);
-                        }
-                    }
-                    (true, true) => {
-                        if let Some(color) = sprite_colors[3] {
-                            self.draw_screen_fg(x + j, y + i, color);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    fn get_screen_x(&self) -> u16 {
-        (self.screen[7] as u16) * 256 + self.screen[8] as u16
-    }
-
-    fn get_screen_y(&self) -> u16 {
-        (self.screen[9] as u16) * 256 + self.screen[10] as u16
-    }
-
-    fn get_color0(&self) -> [u8; 4] {
-        [
-            (self.system[8] >> 4) | (self.system[8] >> 4) << 4,
-            (self.system[10] >> 4) | (self.system[10] >> 4) << 4,
-            (self.system[12] >> 4) | (self.system[12] >> 4) << 4,
-            0xff,
-        ]
-    }
-
-    fn get_color1(&self) -> [u8; 4] {
-        [
-            (self.system[8] << 4) | (self.system[8] << 4) >> 4,
-            (self.system[10] << 4) | (self.system[10] << 4) >> 4,
-            (self.system[12] << 4) | (self.system[12] << 4) >> 4,
-            0xff,
-        ]
-    }
-
-    fn get_color2(&self) -> [u8; 4] {
-        [
-            (self.system[9] >> 4) | (self.system[9] >> 4) << 4,
-            (self.system[11] >> 4) | (self.system[11] >> 4) << 4,
-            (self.system[13] >> 4) | (self.system[13] >> 4) << 4,
-            0xff,
-        ]
-    }
-
-    fn get_color3(&self) -> [u8; 4] {
-        [
-            (self.system[9] << 4) | (self.system[9] << 4) >> 4,
-            (self.system[11] << 4) | (self.system[11] << 4) >> 4,
-            (self.system[13] << 4) | (self.system[13] << 4) >> 4,
-            0xff,
-        ]
-    }
-
-    fn draw_screen_bg(&mut self, x: u16, y: u16, color: [u8; 4]) {
-        let base: usize = ((x as usize) + (y as usize * SCREEN_HEIGHT)) * 4;
-        self.screen_buffer_bg[base] = color[0];
-        self.screen_buffer_bg[base + 1] = color[1];
-        self.screen_buffer_bg[base + 2] = color[2];
-        self.screen_buffer_bg[base + 3] = color[3];
-    }
-
-    fn draw_screen_fg(&mut self, x: u16, y: u16, color: [u8; 4]) {
-        let base: usize = ((x as usize) + (y as usize * SCREEN_HEIGHT)) * 4;
-        self.screen_buffer_fg[base] = color[0];
-        self.screen_buffer_fg[base + 1] = color[1];
-        self.screen_buffer_fg[base + 2] = color[2];
-        self.screen_buffer_fg[base + 3] = color[3];
-    }
-
-    fn write_short(&mut self, val: u16, device: u8, mem: &Vec<u8>) {
-        let next_device = device + 1;
-        self.write((val / 256) as u8, device, mem);
-        self.write((val % 256) as u8, next_device, mem);
-    }
-
-    fn read(&self, device: u8) -> u8 {
-        match Device::from(device) {
-            Device::ScreenXHigh => self.screen[7],
-            Device::ScreenXLow => self.screen[8],
-            Device::ScreenYHigh => self.screen[9],
-            Device::ScreenYLow => self.screen[10],
-            _ => todo!(),
-        }
-    }
-
-    fn read_short(&self, device: u8) -> u16 {
-        let high = self.read(device) as u16;
-        let low = self.read(device + 1) as u16;
-        high * 256 + low
-    }
+    MUL2kr = 0xfa,
 }
 
 struct MachineState {
@@ -641,18 +343,18 @@ fn execute(state: MachineState) -> MachineState {
                 mem[addr as usize] = val;
                 pc += 1;
             }
-            Instruction::LDR => {
-                let addr = wst.read() as i16;
+            /*Instruction::LDR => {
+                let addr = wst.read() as i8;
                 let value = mem[((pc as i16) + addr) as usize];
                 wst.write(value);
                 pc += 1;
             }
             Instruction::STR => {
-                let addr = wst.read() as i16;
+                let addr = wst.read() as i8;
                 let val = wst.read();
                 mem[((pc as i16) + addr) as usize] = val;
                 pc += 1;
-            }
+            }*/
             Instruction::DEI => {
                 let device = wst.read();
                 let val = devices.read(device);
@@ -679,13 +381,20 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(c);
                 pc += 1;
             }
-            Instruction::MUL | Instruction::MULk => {
+            Instruction::MUL | Instruction::MULk | Instruction::MULr | Instruction::MULkr => {
                 let b = wst.read();
                 let a = wst.read();
                 let c = a * b;
                 wst.write(c);
                 pc += 1;
             }
+            Instruction::MUL2 | Instruction::MUL2k | Instruction::MUL2r | Instruction::MUL2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = a * b;
+                wst.write_short(c);
+                pc += 1;
+            }	    
             Instruction::AND | Instruction::ANDk => {
                 let b = wst.read();
                 let a = wst.read();
@@ -1083,16 +792,6 @@ fn ldz_and_stz() {
 }
 
 #[test]
-fn ldr_and_str() {
-    let code = vec![0xa0, 0x50, 0x10, 0x13, 0x80, 0x07, 0x12];
-    let mut wst = vec![0; 256];
-    wst[0] = 0x50;
-    let state = execute_test(code);
-    dbg!(state.mem[0x0113]);
-    assert_eq!(wst, state.wst.st);
-}
-
-#[test]
 fn mul_keep() {
     let code = vec![0xa0, 0x50, 0x02, 0x9a];
     let mut wst = vec![0; 256];
@@ -1102,6 +801,88 @@ fn mul_keep() {
     let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
+}
+
+#[test]
+fn all_mul() {
+    let code_mul = vec![0xa0, 0x02, 0x02, 0x1a];
+    let code_mul2 = vec![0xa0, 0x00, 0x02, 0xa0, 0x00, 0x02, 0x3a];
+    let code_mulr = vec![0xe0, 0x02, 0x02, 0x5a];
+    let code_mul2r = vec![0xe0, 0x00, 0x02, 0xe0, 0x00, 0x02, 0x7a];
+    let code_mulk = vec![0xa0, 0x02, 0x02, 0x9a];
+    let code_mul2k = vec![0xa0, 0x00, 0x02, 0xa0, 0x00, 0x02, 0xba];
+    let code_mulkr = vec![0xe0, 0x02, 0x02, 0xda];
+    let code_mul2kr = vec![0xe0, 0x00, 0x02, 0xe0, 0x00, 0x02, 0xfa];
+
+    let mut wst = vec![0; 256];
+    wst[0] = 0x04;
+    wst[1] = 0x02;
+    let state = execute_test(code_mul);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(1, state.wst.p);
+
+    let mut wst = vec![0; 256];
+    wst[0] = 0x00;
+    wst[1] = 0x04;
+    wst[2] = 0x00;
+    wst[3] = 0x02;
+    let state = execute_test(code_mul2);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(2, state.wst.p);
+
+    let mut rst = vec![0; 256];
+    rst[0] = 0x04;
+    rst[1] = 0x02;
+    let state = execute_test(code_mulr);
+    assert_eq!(rst, state.rst.st);
+    assert_eq!(1, state.rst.p);
+
+    let mut rst = vec![0; 256];
+    rst[0] = 0x00;
+    rst[1] = 0x04;
+    rst[2] = 0x00;
+    rst[3] = 0x02;
+    let state = execute_test(code_mul2r);
+    assert_eq!(rst, state.rst.st);
+    assert_eq!(2, state.rst.p);
+
+    let mut wst = vec![0; 256];
+    wst[0] = 0x02;
+    wst[1] = 0x02;
+    wst[2] = 0x04;
+    let state = execute_test(code_mulk);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(3, state.wst.p);
+
+    let mut wst = vec![0; 256];
+    wst[0] = 0x00;
+    wst[1] = 0x02;
+    wst[2] = 0x00;
+    wst[3] = 0x02;
+    wst[4] = 0x00;
+    wst[5] = 0x04;
+    let state = execute_test(code_mul2k);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(6, state.wst.p);
+
+    let mut rst = vec![0; 256];
+    rst[0] = 0x02;
+    rst[1] = 0x02;
+    rst[2] = 0x04;
+    let state = execute_test(code_mulkr);
+    assert_eq!(rst, state.rst.st);
+    assert_eq!(3, state.rst.p);
+
+    let mut rst = vec![0; 256];
+    rst[0] = 0x00;
+    rst[1] = 0x02;
+    rst[2] = 0x00;
+    rst[3] = 0x02;
+    rst[4] = 0x00;
+    rst[5] = 0x04;
+    let state = execute_test(code_mul2kr);
+    assert_eq!(rst, state.rst.st);
+    assert_eq!(6, state.rst.p);
 }
 
 #[test]
