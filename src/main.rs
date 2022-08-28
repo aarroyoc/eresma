@@ -119,7 +119,8 @@ enum Device {
     ScreenXLow = 0x29,
     ScreenYHigh = 0x2a,
     ScreenYLow = 0x2b,
-    ScreenMemAddress = 0x2c,
+    ScreenAddressHigh = 0x2c,
+    ScreenAddressLow = 0x2d,
     ScreenPixel = 0x2e,
     ScreenSprite = 0x2f,
 }
@@ -148,7 +149,7 @@ impl Default for Devices {
 }
 
 impl Devices {
-    fn write(&mut self, val: u8, device: u8) {
+    fn write(&mut self, val: u8, device: u8, mem: &Vec<u8>) {
         match Device::from(device) {
             Device::SystemRedHigh => {
                 self.system[8] = val;
@@ -183,33 +184,20 @@ impl Devices {
             Device::ScreenYLow => {
                 self.screen[10] = val;
             }
+            Device::ScreenAddressHigh => {
+                self.screen[11] = val;
+            }
+            Device::ScreenAddressLow => {
+                self.screen[12] = val;
+            }
             Device::ScreenPixel => {
-                let x: u16 = (self.screen[7] as u16) * 256 + self.screen[8] as u16;
-                let y: u16 = (self.screen[9] as u16) * 256 + self.screen[10] as u16;
-                let color0 = [
-                    (self.system[8] >> 4) | (self.system[8] >> 4) << 4,
-                    (self.system[10] >> 4) | (self.system[10] >> 4) << 4,
-                    (self.system[12] >> 4) | (self.system[12] >> 4) << 4,
-                    0xff,
-                ];
-                let color1 = [
-                    (self.system[8] << 4) | (self.system[8] << 4) >> 4,
-                    (self.system[10] << 4) | (self.system[10] << 4) >> 4,
-                    (self.system[12] << 4) | (self.system[12] << 4) >> 4,
-                    0xff,
-                ];
-                let color2 = [
-                    (self.system[9] >> 4) | (self.system[9] >> 4) << 4,
-                    (self.system[11] >> 4) | (self.system[11] >> 4) << 4,
-                    (self.system[13] >> 4) | (self.system[13] >> 4) << 4,
-                    0xff,
-                ];
-                let color3 = [
-                    (self.system[9] << 4) | (self.system[9] << 4) >> 4,
-                    (self.system[11] << 4) | (self.system[11] << 4) >> 4,
-                    (self.system[13] << 4) | (self.system[13] << 4) >> 4,
-                    0xff,
-                ];
+                let x: u16 = self.get_screen_x();
+                let y: u16 = self.get_screen_y();
+                let color0 = self.get_color0();
+                let color1 = self.get_color1();
+                let color2 = self.get_color2();
+                let color3 = self.get_color3();
+
                 match val {
                     0x00 => self.draw_screen_bg(x, y, color0),
                     0x01 => self.draw_screen_bg(x, y, color1),
@@ -222,8 +210,178 @@ impl Devices {
                     _ => {}
                 }
             }
+            Device::ScreenSprite => {
+                let address: usize = (self.screen[11] as usize) * 256 + self.screen[12] as usize;
+                let x = self.get_screen_x();
+                let y = self.get_screen_y();
+                let color0 = self.get_color0();
+                let color1 = self.get_color1();
+                let color2 = self.get_color2();
+                let color3 = self.get_color3();
+                for i in 0..8 {
+                    let line = mem[address + i];
+                    let mut mask = 0b10000000;
+
+                    for j in 0..8 {
+                        let pixel = (line & mask) > 0;
+                        mask = mask >> 1;
+
+                        let i = i as u16;
+                        let sprite_low = val & 0b00001111;
+                        match sprite_low {
+                            0x00 => {
+                                self.draw_screen_fg(x + j, y + i, [0, 0, 0, 0]);
+                            }
+                            0x01 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color1);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color0);
+                                }
+                            }
+                            0x02 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color2);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color0);
+                                }
+                            }
+                            0x03 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color3);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color0);
+                                }
+                            }
+                            0x04 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color0);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color1);
+                                }
+                            }
+                            0x05 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color1);
+                                }
+                            }
+                            0x06 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color2);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color1);
+                                }
+                            }
+                            0x07 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color3);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color1);
+                                }
+                            }
+                            0x08 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color0);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color2);
+                                }
+                            }
+                            0x09 => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color1);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color2);
+                                }
+                            }
+                            0x0a => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color2);
+                                }
+                            }
+                            0x0b => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color3);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color2);
+                                }
+                            }
+                            0x0c => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color0);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color3);
+                                }
+                            }
+                            0x0d => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color1);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color3);
+                                }
+                            }
+                            0x0e => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color2);
+                                } else {
+                                    self.draw_screen_fg(x + j, y + i, color3);
+                                }
+                            }
+                            0x0f => {
+                                if pixel {
+                                    self.draw_screen_fg(x + j, y + i, color3);
+                                }
+                            }
+                            _ => unreachable!(),
+                        }
+                    }
+                }
+            }
             _ => todo!(),
         }
+    }
+
+    fn get_screen_x(&self) -> u16 {
+        (self.screen[7] as u16) * 256 + self.screen[8] as u16
+    }
+
+    fn get_screen_y(&self) -> u16 {
+        (self.screen[9] as u16) * 256 + self.screen[10] as u16
+    }
+
+    fn get_color0(&self) -> [u8; 4] {
+        [
+            (self.system[8] >> 4) | (self.system[8] >> 4) << 4,
+            (self.system[10] >> 4) | (self.system[10] >> 4) << 4,
+            (self.system[12] >> 4) | (self.system[12] >> 4) << 4,
+            0xff,
+        ]
+    }
+
+    fn get_color1(&self) -> [u8; 4] {
+        [
+            (self.system[8] << 4) | (self.system[8] << 4) >> 4,
+            (self.system[10] << 4) | (self.system[10] << 4) >> 4,
+            (self.system[12] << 4) | (self.system[12] << 4) >> 4,
+            0xff,
+        ]
+    }
+
+    fn get_color2(&self) -> [u8; 4] {
+        [
+            (self.system[9] >> 4) | (self.system[9] >> 4) << 4,
+            (self.system[11] >> 4) | (self.system[11] >> 4) << 4,
+            (self.system[13] >> 4) | (self.system[13] >> 4) << 4,
+            0xff,
+        ]
+    }
+
+    fn get_color3(&self) -> [u8; 4] {
+        [
+            (self.system[9] << 4) | (self.system[9] << 4) >> 4,
+            (self.system[11] << 4) | (self.system[11] << 4) >> 4,
+            (self.system[13] << 4) | (self.system[13] << 4) >> 4,
+            0xff,
+        ]
     }
 
     fn draw_screen_bg(&mut self, x: u16, y: u16, color: [u8; 4]) {
@@ -242,10 +400,10 @@ impl Devices {
         self.screen_buffer_fg[base + 3] = color[3];
     }
 
-    fn write_short(&mut self, val: u16, device: u8) {
+    fn write_short(&mut self, val: u16, device: u8, mem: &Vec<u8>) {
         let next_device = device + 1;
-        self.write((val / 256) as u8, device);
-        self.write((val % 256) as u8, next_device);
+        self.write((val / 256) as u8, device, mem);
+        self.write((val % 256) as u8, next_device, mem);
     }
 
     fn read(&self, device: u8) -> u8 {
@@ -320,16 +478,16 @@ impl event::EventHandler<ggez::GameError> for MachineState {
 
         let image_bg = Image::from_rgba8(
             ctx,
-            SCREEN_WIDTH as u16,
             SCREEN_HEIGHT as u16,
+            SCREEN_WIDTH as u16,
             &self.devices.screen_buffer_bg,
         )?;
         image_bg.draw(ctx, DrawParam::new())?;
 
         let image_fg = Image::from_rgba8(
             ctx,
-            SCREEN_WIDTH as u16,
             SCREEN_HEIGHT as u16,
+            SCREEN_WIDTH as u16,
             &self.devices.screen_buffer_fg,
         )?;
         image_fg.draw(ctx, DrawParam::new())?;
@@ -352,7 +510,7 @@ fn main() -> GameResult {
     });
     let (mut ctx, event_loop) = cb.build()?;
     graphics::set_default_filter(&mut ctx, graphics::FilterMode::Nearest);
-    let state = MachineState::from_file("roms/hello-pixels.rom")?;
+    let state = MachineState::from_file("roms/hello-sprites.rom")?;
     event::run(ctx, event_loop, state)
 }
 
@@ -523,7 +681,7 @@ fn execute(state: MachineState) -> MachineState {
             Instruction::DEO => {
                 let device = wst.read();
                 let val = wst.read();
-                devices.write(val, device);
+                devices.write(val, device, &mem);
                 pc += 1;
             }
             Instruction::ADD | Instruction::ADDk => {
@@ -598,7 +756,7 @@ fn execute(state: MachineState) -> MachineState {
             Instruction::DEO2 => {
                 let device = wst.read();
                 let val = wst.read_short();
-                devices.write_short(val, device);
+                devices.write_short(val, device, &mem);
                 pc += 1;
             }
         }
