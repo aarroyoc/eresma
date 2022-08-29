@@ -4,7 +4,7 @@ use std::fs::File;
 use std::io::prelude::*;
 
 use ggez::conf::{WindowMode, WindowSetup};
-use ggez::event;
+use ggez::event::{self, KeyCode, KeyMods};
 use ggez::graphics::{self, *};
 use ggez::{Context, GameResult};
 use num_enum::FromPrimitive;
@@ -52,6 +52,7 @@ enum Instruction {
     DEI2 = 0x36,
     DEO2 = 0x37,
     ADD2 = 0x38,
+    SUB2 = 0x39,
     MUL2 = 0x3a,
     DIV2 = 0x3b,
     SFT2 = 0x3f,
@@ -66,10 +67,14 @@ enum Instruction {
     NEQr = 0x49,
     GTHr = 0x4a,
     LTHr = 0x4b,
+    ADDr = 0x58,
+    SUBr = 0x59,
     MULr = 0x5a,
     DIVr = 0x5b,
     SFTr = 0x5f,
     INC2r = 0x61,
+    ADD2r = 0x78,
+    SUB2r = 0x79,
     MUL2r = 0x7a,
     DIV2r = 0x7b,
     SFT2r = 0x7f,
@@ -99,6 +104,8 @@ enum Instruction {
     SFTk = 0x9f,
     LIT2 = 0xa0,
     INC2k = 0xa1,
+    ADD2k = 0xb8,
+    SUB2k = 0xb9,
     MUL2k = 0xba,
     DIV2k = 0xbb,
     SFT2k = 0xbf,
@@ -114,11 +121,15 @@ enum Instruction {
     NEQkr = 0xc9,
     GTHkr = 0xca,
     LTHkr = 0xcb,
+    ADDkr = 0xd8,
+    SUBkr = 0xd9,
     MULkr = 0xda,
     DIVkr = 0xdb,
     SFTkr = 0xdf,
     LIT2r = 0xe0,
     INC2kr = 0xe1,
+    ADD2kr = 0xf8,
+    SUB2kr = 0xf9,
     MUL2kr = 0xfa,
     DIV2kr = 0xfb,
     SFT2kr = 0xff,
@@ -172,6 +183,57 @@ impl MachineState {
 impl event::EventHandler<ggez::GameError> for MachineState {
     fn update(&mut self, _ctx: &mut Context) -> GameResult {
         Ok(())
+    }
+
+    fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, keymods: KeyMods) {
+	let mut button = self.devices.get_button();
+	match keycode {
+	    KeyCode::Up => { button ^= 0b00010000; }
+	    KeyCode::Down => { button ^= 0b00100000; }
+	    KeyCode::Left => { button ^= 0b01000000; }
+	    KeyCode::Right => { button ^= 0b10000000; }
+	    _ => {}
+	};
+	match keymods {
+	    KeyMods::CTRL => { button ^= 0b00000001; }
+	    _ => {}
+	};
+	self.devices.set_button(button);
+    }
+
+    fn key_down_event(&mut self, _ctx: &mut Context, keycode: KeyCode, keymods: KeyMods, _repeat: bool) {
+	self.devices.set_key(match keycode {
+	    KeyCode::Key1 => b'1',
+	    KeyCode::Key2 => b'2',
+	    KeyCode::Key3 => b'3',
+	    _ => b'\0'
+	});
+
+	let mut button = self.devices.get_button();
+	match keycode {
+	    KeyCode::Up => { button |= 0b00010000; }
+	    KeyCode::Down => { button |= 0b00100000; }
+	    KeyCode::Left => { button |= 0b01000000; }
+	    KeyCode::Right => { button |= 0b10000000; }
+	    _ => {}
+	};
+	match keymods {
+	    KeyMods::CTRL => { button |= 0b00000001; }
+	    _ => {}
+	};
+	self.devices.set_button(button);
+	
+	let ns = execute(MachineState {
+	    wst: self.wst.clone(),
+	    rst: self.rst.clone(),
+	    mem: self.mem.clone(),
+	    pc: self.devices.get_controller_vector(),
+	    devices: self.devices.clone(),
+	});
+	self.wst = ns.wst;
+	self.rst = ns.rst;
+	self.mem = ns.mem;
+	self.devices = ns.devices;
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
@@ -338,15 +400,15 @@ fn execute(state: MachineState) -> MachineState {
             }
             Instruction::JMP | Instruction::JMPk => {
                 let addr = wst.read();
-                pc = (pc as i16 + addr as i16) as usize;
+                pc = (pc as i16 + 1 + addr as i16) as usize;
             }
             Instruction::JCN | Instruction::JCNk => {
                 let addr = wst.read();
                 let cond = wst.read();
-                pc = if cond == 0x00 {
-                    pc + 0x01
+                pc = if cond == 0 {
+                    pc + 1
                 } else {
-                    (pc as i16 + addr as i16) as usize
+                    (pc as i16 + 1 + addr as i16) as usize
                 };
             }
             Instruction::JSR | Instruction::JSRk => {
@@ -395,20 +457,34 @@ fn execute(state: MachineState) -> MachineState {
                 devices.write(val, device, &mem);
                 pc += 1;
             }
-            Instruction::ADD | Instruction::ADDk => {
+            Instruction::ADD | Instruction::ADDk | Instruction::ADDr | Instruction::ADDkr => {
                 let b = wst.read();
                 let a = wst.read();
                 let c = a + b;
                 wst.write(c);
                 pc += 1;
             }
-            Instruction::SUB | Instruction::SUBk => {
+            Instruction::ADD2 | Instruction::ADD2k | Instruction::ADD2r | Instruction::ADD2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = a + b;
+                wst.write_short(c);
+                pc += 1;
+            }	    
+            Instruction::SUB | Instruction::SUBk | Instruction::SUBr | Instruction::SUBkr => {
                 let b = wst.read();
                 let a = wst.read();
                 let c = a - b;
                 wst.write(c);
                 pc += 1;
             }
+            Instruction::SUB2 | Instruction::SUB2k | Instruction::SUB2r | Instruction::SUB2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = a - b;
+                wst.write_short(c);
+                pc += 1;
+            }	    
             Instruction::MUL | Instruction::MULk | Instruction::MULr | Instruction::MULkr => {
                 let b = wst.read();
                 let a = wst.read();
@@ -473,13 +549,6 @@ fn execute(state: MachineState) -> MachineState {
                 let left = shift / 16;
                 let right = shift % 16;
                 let c = (a >> right) << left;
-                wst.write_short(c);
-                pc += 1;
-            }	    
-            Instruction::ADD2 => {
-                let b = wst.read_short();
-                let a = wst.read_short();
-                let c = a + b;
                 wst.write_short(c);
                 pc += 1;
             }
@@ -784,7 +853,7 @@ fn jmp() {
     let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
-    assert_eq!(0x0100 + 0x02 + 0x34 + 0x01, state.pc);
+    assert_eq!(0x0100 + 0x04 + 0x34, state.pc);
 }
 
 #[test]
@@ -796,7 +865,7 @@ fn jcn() {
     let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(0, state.wst.p);
-    assert_eq!(0x0100 + 0x02 + 0x34 + 0x01, state.pc);
+    assert_eq!(0x0100 + 0x04 + 0x34, state.pc);
 }
 
 #[test]

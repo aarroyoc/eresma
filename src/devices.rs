@@ -25,6 +25,10 @@ enum Device {
     ScreenAddressLow = 0x2d,
     ScreenPixel = 0x2e,
     ScreenSprite = 0x2f,
+    ControllerVectorHigh = 0x80,
+    ControllerVectorLow = 0x81,
+    ControllerButton = 0x82,
+    ControllerKey = 0x83,
 }
 
 pub const SCREEN_WIDTH: usize = 512;
@@ -39,6 +43,7 @@ const SCREEN_SIZE: usize = (SCREEN_WIDTH * SCREEN_HEIGHT * 4) as usize;
 pub struct Devices {
     system: [u8; 16],
     screen: [u8; 16],
+    controller: [u8; 4],
     pub screen_buffer_bg: Vec<u8>,
     pub screen_buffer_fg: Vec<u8>,
 }
@@ -48,6 +53,7 @@ impl Default for Devices {
         Devices {
             system: [0; 16],
             screen: [0; 16],
+	    controller: [0; 4],
             screen_buffer_bg: vec![0; SCREEN_SIZE],
             screen_buffer_fg: vec![0; SCREEN_SIZE],
         }
@@ -124,6 +130,12 @@ impl Devices {
                     self.draw_sprite_1bpp(address, mem, val);
                 }
             }
+	    Device::ControllerVectorHigh => {
+		self.controller[0] = val;
+	    }
+	    Device::ControllerVectorLow => {
+		self.controller[1] = val;
+	    }
             _ => todo!(),
         }
     }
@@ -227,6 +239,26 @@ impl Devices {
         }
     }
 
+    pub fn get_button(&self) -> u8 {
+	self.controller[2]
+    }
+
+    pub fn set_button(&mut self, button: u8) {
+	self.controller[2] = button;
+    }
+
+    pub fn get_key(&self) -> u8 {
+	self.controller[3]
+    }
+
+    pub fn set_key(&mut self, key: u8) {
+	self.controller[3] = key;
+    }
+
+    pub fn get_controller_vector(&self) -> u16 {
+	(self.controller[0] as u16) * 256 + self.controller[1] as u16
+    }
+
     fn get_screen_x(&self) -> u16 {
         (self.screen[7] as u16) * 256 + self.screen[8] as u16
     }
@@ -303,6 +335,8 @@ impl Devices {
 	    Device::ScreenWidthLow => SCREEN_WIDTH_LOW,
 	    Device::ScreenHeightHigh => SCREEN_HEIGHT_HIGH,
 	    Device::ScreenHeightLow => SCREEN_HEIGHT_LOW,
+	    Device::ControllerButton => self.controller[2],
+	    Device::ControllerKey => self.controller[3],
             _ => todo!(),
         }
     }
