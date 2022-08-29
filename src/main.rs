@@ -1,4 +1,5 @@
 #![allow(clippy::upper_case_acronyms)]
+use std::env;
 use std::fs::File;
 use std::io::prelude::*;
 
@@ -198,20 +199,25 @@ impl event::EventHandler<ggez::GameError> for MachineState {
 }
 
 fn main() -> GameResult {
-    let cb = ggez::ContextBuilder::new("eresma", "aarroyoc");
-    let cb = cb.window_setup(WindowSetup {
-        title: "Eresma - UXN/Varvara Computer".to_string(),
-        ..WindowSetup::default()
-    });
-    let cb = cb.window_mode(WindowMode {
-        width: 512.0,
-        height: 320.0,
-        ..WindowMode::default()
-    });
-    let (mut ctx, event_loop) = cb.build()?;
-    graphics::set_default_filter(&mut ctx, graphics::FilterMode::Nearest);
-    let state = MachineState::from_file("roms/hello-2bpp-sprite.rom")?;
-    event::run(ctx, event_loop, state)
+    let args: Vec<String> = env::args().collect();
+    if args.len() == 2 {
+	let cb = ggez::ContextBuilder::new("eresma", "aarroyoc");
+	let cb = cb.window_setup(WindowSetup {
+	    title: "Eresma - UXN/Varvara Computer".to_string(),
+	    ..WindowSetup::default()
+	});
+	let cb = cb.window_mode(WindowMode {
+	    width: 512.0,
+	    height: 320.0,
+	    ..WindowMode::default()
+	});
+	let (mut ctx, event_loop) = cb.build()?;
+	graphics::set_default_filter(&mut ctx, graphics::FilterMode::Nearest);
+	let state = MachineState::from_file(&args[1])?;
+	event::run(ctx, event_loop, state)
+    } else {
+	panic!("Invalid number of arguments\nUse: eresma ROM_FILE");
+    }
 }
 
 fn is_return_mode(opcode: u8) -> bool {
