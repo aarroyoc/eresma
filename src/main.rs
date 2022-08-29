@@ -42,6 +42,7 @@ enum Instruction {
     ADD = 0x18,
     SUB = 0x19,
     MUL = 0x1a,
+    DIV = 0x1b,
     AND = 0x1c,
     ORA = 0x1d,
     EOR = 0x1e,
@@ -51,6 +52,8 @@ enum Instruction {
     DEO2 = 0x37,
     ADD2 = 0x38,
     MUL2 = 0x3a,
+    DIV2 = 0x3b,
+    SFT2 = 0x3f,
     INCr = 0x41,
     POPr = 0x42,
     NIPr = 0x43,
@@ -63,7 +66,12 @@ enum Instruction {
     GTHr = 0x4a,
     LTHr = 0x4b,
     MULr = 0x5a,
+    DIVr = 0x5b,
+    SFTr = 0x5f,
+    INC2r = 0x61,
     MUL2r = 0x7a,
+    DIV2r = 0x7b,
+    SFT2r = 0x7f,
     LIT = 0x80,
     INCk = 0x81,
     POPk = 0x82,
@@ -83,12 +91,16 @@ enum Instruction {
     ADDk = 0x98,
     SUBk = 0x99,
     MULk = 0x9a,
+    DIVk = 0x9b,
     ANDk = 0x9c,
     ORAk = 0x9d,
     EORk = 0x9e,
     SFTk = 0x9f,
     LIT2 = 0xa0,
+    INC2k = 0xa1,
     MUL2k = 0xba,
+    DIV2k = 0xbb,
+    SFT2k = 0xbf,
     LITr = 0xc0,
     INCkr = 0xc1,
     POPkr = 0xc2,
@@ -102,8 +114,13 @@ enum Instruction {
     GTHkr = 0xca,
     LTHkr = 0xcb,
     MULkr = 0xda,
+    DIVkr = 0xdb,
+    SFTkr = 0xdf,
     LIT2r = 0xe0,
+    INC2kr = 0xe1,
     MUL2kr = 0xfa,
+    DIV2kr = 0xfb,
+    SFT2kr = 0xff,
 }
 
 struct MachineState {
@@ -240,6 +257,11 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(a + 1);
                 pc += 1;
             }
+	    Instruction::INC2 | Instruction::INC2k | Instruction::INC2r | Instruction::INC2kr => {
+		let a = wst.read_short();
+		wst.write_short(a + 1);
+		pc += 1;
+	    }
             Instruction::POP | Instruction::POPk | Instruction::POPr | Instruction::POPkr => {
                 wst.read();
                 pc += 1;
@@ -394,7 +416,21 @@ fn execute(state: MachineState) -> MachineState {
                 let c = a * b;
                 wst.write_short(c);
                 pc += 1;
-            }	    
+            }
+	    Instruction::DIV | Instruction::DIVk | Instruction::DIVr | Instruction::DIVkr => {
+		let b = wst.read();
+		let a = wst.read();
+		let c = a / b;
+		wst.write(c);
+		pc += 1;
+	    }
+	    Instruction::DIV2 | Instruction::DIV2k | Instruction::DIV2r | Instruction::DIV2kr => {
+		let b = wst.read_short();
+		let a = wst.read_short();
+		let c = a / b;
+		wst.write_short(c);
+		pc += 1;
+	    }
             Instruction::AND | Instruction::ANDk => {
                 let b = wst.read();
                 let a = wst.read();
@@ -416,7 +452,7 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(c);
                 pc += 1;
             }
-            Instruction::SFT | Instruction::SFTk => {
+            Instruction::SFT | Instruction::SFTk | Instruction::SFTr | Instruction::SFTkr => {
                 let shift = wst.read();
                 let a = wst.read();
                 let left = shift / 16;
@@ -425,16 +461,20 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(c);
                 pc += 1;
             }
+            Instruction::SFT2 | Instruction::SFT2k | Instruction::SFT2r | Instruction::SFT2kr => {
+                let shift = wst.read();
+                let a = wst.read_short();
+                let left = shift / 16;
+                let right = shift % 16;
+                let c = (a >> right) << left;
+                wst.write_short(c);
+                pc += 1;
+            }	    
             Instruction::ADD2 => {
                 let b = wst.read_short();
                 let a = wst.read_short();
                 let c = a + b;
                 wst.write_short(c);
-                pc += 1;
-            }
-            Instruction::INC2 => {
-                let a = wst.read_short();
-                wst.write_short(a + 1);
                 pc += 1;
             }
             Instruction::DEI2 => {
@@ -886,6 +926,88 @@ fn all_mul() {
 }
 
 #[test]
+fn all_div() {
+    let code_div = vec![0xa0, 0x02, 0x02, 0x1b];
+    let code_div2 = vec![0xa0, 0x00, 0x02, 0xa0, 0x00, 0x02, 0x3b];
+    let code_divr = vec![0xe0, 0x02, 0x02, 0x5b];
+    let code_div2r = vec![0xe0, 0x00, 0x02, 0xe0, 0x00, 0x02, 0x7b];
+    let code_divk = vec![0xa0, 0x02, 0x02, 0x9b];
+    let code_div2k = vec![0xa0, 0x00, 0x02, 0xa0, 0x00, 0x02, 0xbb];
+    let code_divkr = vec![0xe0, 0x02, 0x02, 0xdb];
+    let code_div2kr = vec![0xe0, 0x00, 0x02, 0xe0, 0x00, 0x02, 0xfb];
+
+    let mut wst = vec![0; 256];
+    wst[0] = 0x01;
+    wst[1] = 0x02;
+    let state = execute_test(code_div);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(1, state.wst.p);
+
+    let mut wst = vec![0; 256];
+    wst[0] = 0x00;
+    wst[1] = 0x01;
+    wst[2] = 0x00;
+    wst[3] = 0x02;
+    let state = execute_test(code_div2);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(2, state.wst.p);
+
+    let mut rst = vec![0; 256];
+    rst[0] = 0x01;
+    rst[1] = 0x02;
+    let state = execute_test(code_divr);
+    assert_eq!(rst, state.rst.st);
+    assert_eq!(1, state.rst.p);
+
+    let mut rst = vec![0; 256];
+    rst[0] = 0x00;
+    rst[1] = 0x01;
+    rst[2] = 0x00;
+    rst[3] = 0x02;
+    let state = execute_test(code_div2r);
+    assert_eq!(rst, state.rst.st);
+    assert_eq!(2, state.rst.p);
+
+    let mut wst = vec![0; 256];
+    wst[0] = 0x02;
+    wst[1] = 0x02;
+    wst[2] = 0x01;
+    let state = execute_test(code_divk);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(3, state.wst.p);
+
+    let mut wst = vec![0; 256];
+    wst[0] = 0x00;
+    wst[1] = 0x02;
+    wst[2] = 0x00;
+    wst[3] = 0x02;
+    wst[4] = 0x00;
+    wst[5] = 0x01;
+    let state = execute_test(code_div2k);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(6, state.wst.p);
+
+    let mut rst = vec![0; 256];
+    rst[0] = 0x02;
+    rst[1] = 0x02;
+    rst[2] = 0x01;
+    let state = execute_test(code_divkr);
+    assert_eq!(rst, state.rst.st);
+    assert_eq!(3, state.rst.p);
+
+    let mut rst = vec![0; 256];
+    rst[0] = 0x00;
+    rst[1] = 0x02;
+    rst[2] = 0x00;
+    rst[3] = 0x02;
+    rst[4] = 0x00;
+    rst[5] = 0x01;
+    let state = execute_test(code_div2kr);
+    assert_eq!(rst, state.rst.st);
+    assert_eq!(6, state.rst.p);
+}
+
+#[test]
 fn and() {
     let code = vec![0xa0, 0xf0, 0x0f, 0x1c];
     let mut wst = vec![0; 256];
@@ -929,10 +1051,15 @@ fn sft() {
     let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(1, state.wst.p);
-}
 
-#[test]
-fn sft_keep() {
+    let code = vec![0xa0, 0x34, 0x01, 0x1f];
+    let mut wst = vec![0; 256];
+    wst[0] = 0x1a;
+    wst[1] = 0x01;
+    let state = execute_test(code);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(1, state.wst.p);
+
     let code = vec![0xa0, 0x34, 0x33, 0x9f];
     let mut wst = vec![0; 256];
     wst[0] = 0x34;
@@ -941,4 +1068,15 @@ fn sft_keep() {
     let state = execute_test(code);
     assert_eq!(wst, state.wst.st);
     assert_eq!(3, state.wst.p);
+
+    let code = vec![0xa0, 0x12, 0x48, 0x80, 0x34, 0xbf];
+    let mut wst = vec![0; 256];
+    wst[0] = 0x12;
+    wst[1] = 0x48;
+    wst[2] = 0x34;
+    wst[3] = 0x09;
+    wst[4] = 0x20;
+    let state = execute_test(code);
+    assert_eq!(wst, state.wst.st);
+    assert_eq!(5, state.wst.p);
 }
