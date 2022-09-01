@@ -6,6 +6,7 @@ use std::io::prelude::*;
 use ggez::conf::{WindowMode, WindowSetup};
 use ggez::event::{self, KeyCode, KeyMods};
 use ggez::graphics::{self, *};
+use ggez::timer::check_update_time;
 use ggez::{Context, GameResult};
 use num_enum::FromPrimitive;
 
@@ -49,12 +50,25 @@ enum Instruction {
     EOR = 0x1e,
     SFT = 0x1f,
     INC2 = 0x21,
+    POP2 = 0x22,
+    NIP2 = 0x23,
+    SWP2 = 0x24,
+    ROT2 = 0x25,
+    DUP2 = 0x26,
+    OVR2 = 0x27,
+    EQU2 = 0x28,
+    NEQ2 = 0x29,
+    GTH2 = 0x2a,
+    LTH2 = 0x2b,
     DEI2 = 0x36,
     DEO2 = 0x37,
     ADD2 = 0x38,
     SUB2 = 0x39,
     MUL2 = 0x3a,
     DIV2 = 0x3b,
+    AND2 = 0x3c,
+    ORA2 = 0x3d,
+    EOR2 = 0x3e,
     SFT2 = 0x3f,
     INCr = 0x41,
     POPr = 0x42,
@@ -71,12 +85,28 @@ enum Instruction {
     SUBr = 0x59,
     MULr = 0x5a,
     DIVr = 0x5b,
+    ANDr = 0x5c,
+    ORAr = 0x5d,
+    EORr = 0x5e,
     SFTr = 0x5f,
     INC2r = 0x61,
+    POP2r = 0x62,
+    NIP2r = 0x63,
+    SWP2r = 0x64,
+    ROT2r = 0x65,
+    DUP2r = 0x66,
+    OVR2r = 0x67,
+    EQU2r = 0x68,
+    NEQ2r = 0x69,
+    GTH2r = 0x6a,
+    LTH2r = 0x6b,
     ADD2r = 0x78,
     SUB2r = 0x79,
     MUL2r = 0x7a,
     DIV2r = 0x7b,
+    AND2r = 0x7c,
+    ORA2r = 0x7d,
+    EOR2r = 0x7e,
     SFT2r = 0x7f,
     LIT = 0x80,
     INCk = 0x81,
@@ -104,10 +134,23 @@ enum Instruction {
     SFTk = 0x9f,
     LIT2 = 0xa0,
     INC2k = 0xa1,
+    POP2k = 0xa2,
+    NIP2k = 0xa3,
+    SWP2k = 0xa4,
+    ROT2k = 0xa5,
+    DUP2k = 0xa6,
+    OVR2k = 0xa7,
+    EQU2k = 0xa8,
+    NEQ2k = 0xa9,
+    GTH2k = 0xaa,
+    LTH2k = 0xab,
     ADD2k = 0xb8,
     SUB2k = 0xb9,
     MUL2k = 0xba,
     DIV2k = 0xbb,
+    AND2k = 0xbc,
+    ORA2k = 0xbd,
+    EOR2k = 0xbe,
     SFT2k = 0xbf,
     LITr = 0xc0,
     INCkr = 0xc1,
@@ -125,13 +168,29 @@ enum Instruction {
     SUBkr = 0xd9,
     MULkr = 0xda,
     DIVkr = 0xdb,
+    ANDkr = 0xdc,
+    ORAkr = 0xdd,
+    EORkr = 0xde,
     SFTkr = 0xdf,
     LIT2r = 0xe0,
     INC2kr = 0xe1,
+    POP2kr = 0xe2,
+    NIP2kr = 0xe3,
+    SWP2kr = 0xe4,
+    ROT2kr = 0xe5,
+    DUP2kr = 0xe6,
+    OVR2kr = 0xe7,
+    EQU2kr = 0xe8,
+    NEQ2kr = 0xe9,
+    GTH2kr = 0xea,
+    LTH2kr = 0xeb,
     ADD2kr = 0xf8,
     SUB2kr = 0xf9,
     MUL2kr = 0xfa,
     DIV2kr = 0xfb,
+    AND2kr = 0xfc,
+    ORA2kr = 0xfd,
+    EOR2kr = 0xfe,
     SFT2kr = 0xff,
 }
 
@@ -181,7 +240,20 @@ impl MachineState {
 }
 
 impl event::EventHandler<ggez::GameError> for MachineState {
-    fn update(&mut self, _ctx: &mut Context) -> GameResult {
+    fn update(&mut self, ctx: &mut Context) -> GameResult {
+	while check_update_time(ctx, 60) {
+	    let ns = execute(MachineState {
+		wst: self.wst.clone(),
+		rst: self.rst.clone(),
+		mem: self.mem.clone(),
+		pc: self.devices.get_screen_vector(),
+		devices: self.devices.clone(),
+	    });
+	    self.wst = ns.wst;
+	    self.rst = ns.rst;
+	    self.mem = ns.mem;
+	    self.devices = ns.devices;
+	}
         Ok(())
     }
 
@@ -241,16 +313,16 @@ impl event::EventHandler<ggez::GameError> for MachineState {
 
         let image_bg = Image::from_rgba8(
             ctx,
-            SCREEN_HEIGHT as u16,
             SCREEN_WIDTH as u16,
+            SCREEN_HEIGHT as u16,
             &self.devices.screen_buffer_bg,
         )?;
         image_bg.draw(ctx, DrawParam::new())?;
 
         let image_fg = Image::from_rgba8(
             ctx,
-            SCREEN_HEIGHT as u16,
             SCREEN_WIDTH as u16,
+            SCREEN_HEIGHT as u16,
             &self.devices.screen_buffer_fg,
         )?;
         image_fg.draw(ctx, DrawParam::new())?;
@@ -334,12 +406,22 @@ fn execute(state: MachineState) -> MachineState {
                 wst.read();
                 pc += 1;
             }
+            Instruction::POP2 | Instruction::POP2k | Instruction::POP2r | Instruction::POP2kr => {
+                wst.read_short();
+                pc += 1;
+            }	    
             Instruction::NIP | Instruction::NIPk | Instruction::NIPr | Instruction::NIPkr => {
                 let b = wst.read();
                 let _ = wst.read();
                 wst.write(b);
                 pc += 1;
             }
+            Instruction::NIP2 | Instruction::NIP2k | Instruction::NIP2r | Instruction::NIP2kr => {
+                let b = wst.read_short();
+                let _ = wst.read_short();
+                wst.write_short(b);
+                pc += 1;
+            }	    
             Instruction::SWP | Instruction::SWPk | Instruction::SWPr | Instruction::SWPkr => {
                 let b = wst.read();
                 let a = wst.read();
@@ -347,6 +429,13 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(a);
                 pc += 1;
             }
+            Instruction::SWP2 | Instruction::SWP2k | Instruction::SWP2r | Instruction::SWP2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                wst.write_short(b);
+                wst.write_short(a);
+                pc += 1;
+            }	    
             Instruction::ROT | Instruction::ROTk | Instruction::ROTr | Instruction::ROTkr => {
                 let c = wst.read();
                 let b = wst.read();
@@ -356,12 +445,27 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(a);
                 pc += 1;
             }
+            Instruction::ROT2 | Instruction::ROT2k | Instruction::ROT2r | Instruction::ROT2kr => {
+                let c = wst.read_short();
+                let b = wst.read_short();
+                let a = wst.read_short();
+                wst.write_short(b);
+                wst.write_short(c);
+                wst.write_short(a);
+                pc += 1;
+            }	    
             Instruction::DUP | Instruction::DUPk | Instruction::DUPr | Instruction::DUPkr => {
                 let a = wst.read();
                 wst.write(a);
                 wst.write(a);
                 pc += 1;
             }
+            Instruction::DUP2 | Instruction::DUP2k | Instruction::DUP2r | Instruction::DUP2kr => {
+                let a = wst.read_short();
+                wst.write_short(a);
+                wst.write_short(a);
+                pc += 1;
+            }	    
             Instruction::OVR | Instruction::OVRk | Instruction::OVRr | Instruction::OVRkr => {
                 let b = wst.read();
                 let a = wst.read();
@@ -370,6 +474,14 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(a);
                 pc += 1;
             }
+            Instruction::OVR2 | Instruction::OVR2k | Instruction::OVR2r | Instruction::OVR2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                wst.write_short(a);
+                wst.write_short(b);
+                wst.write_short(a);
+                pc += 1;
+            }	    
             Instruction::EQU | Instruction::EQUk | Instruction::EQUr | Instruction::EQUkr => {
                 let b = wst.read();
                 let a = wst.read();
@@ -377,6 +489,13 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(c);
                 pc += 1;
             }
+            Instruction::EQU2 | Instruction::EQU2k | Instruction::EQU2r | Instruction::EQU2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = if a == b { 0x01 } else { 0x00 };
+                wst.write_short(c);
+                pc += 1;
+            }	    
             Instruction::NEQ | Instruction::NEQk | Instruction::NEQr | Instruction::NEQkr => {
                 let b = wst.read();
                 let a = wst.read();
@@ -384,6 +503,13 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(c);
                 pc += 1;
             }
+            Instruction::NEQ2 | Instruction::NEQ2k | Instruction::NEQ2r | Instruction::NEQ2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = if a == b { 0x00 } else { 0x01 };
+                wst.write_short(c);
+                pc += 1;
+            }	    
             Instruction::GTH | Instruction::GTHk | Instruction::GTHr | Instruction::GTHkr => {
                 let b = wst.read();
                 let a = wst.read();
@@ -391,6 +517,13 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(c);
                 pc += 1;
             }
+            Instruction::GTH2 | Instruction::GTH2k | Instruction::GTH2r | Instruction::GTH2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = if a < b { 0x00 } else { 0x01 };
+                wst.write_short(c);
+                pc += 1;
+            }	    
             Instruction::LTH | Instruction::LTHk | Instruction::LTHr | Instruction::LTHkr => {
                 let b = wst.read();
                 let a = wst.read();
@@ -398,6 +531,13 @@ fn execute(state: MachineState) -> MachineState {
                 wst.write(c);
                 pc += 1;
             }
+            Instruction::LTH2 | Instruction::LTH2k | Instruction::LTH2r | Instruction::LTH2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = if a > b { 0x01 } else { 0x00 };
+                wst.write_short(c);
+                pc += 1;
+            }	    
             Instruction::JMP | Instruction::JMPk => {
                 let addr = wst.read();
                 pc = (pc as i16 + 1 + addr as i16) as usize;
@@ -513,27 +653,48 @@ fn execute(state: MachineState) -> MachineState {
 		wst.write_short(c);
 		pc += 1;
 	    }
-            Instruction::AND | Instruction::ANDk => {
+            Instruction::AND | Instruction::ANDk | Instruction::ANDr | Instruction::ANDkr => {
                 let b = wst.read();
                 let a = wst.read();
                 let c = a & b;
                 wst.write(c);
                 pc += 1;
             }
-            Instruction::ORA | Instruction::ORAk => {
+            Instruction::AND2 | Instruction::AND2k | Instruction::AND2r | Instruction::AND2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = a & b;
+                wst.write_short(c);
+                pc += 1;
+            }	    
+            Instruction::ORA | Instruction::ORAk | Instruction::ORAr | Instruction::ORAkr => {
                 let b = wst.read();
                 let a = wst.read();
                 let c = a | b;
                 wst.write(c);
                 pc += 1;
             }
-            Instruction::EOR | Instruction::EORk => {
+            Instruction::ORA2 | Instruction::ORA2k | Instruction::ORA2r | Instruction::ORA2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = a | b;
+                wst.write_short(c);
+                pc += 1;
+            }	    
+            Instruction::EOR | Instruction::EORk | Instruction::EORr | Instruction::EORkr => {
                 let b = wst.read();
                 let a = wst.read();
                 let c = a ^ b;
                 wst.write(c);
                 pc += 1;
             }
+            Instruction::EOR2 | Instruction::EOR2k | Instruction::EOR2r | Instruction::EOR2kr => {
+                let b = wst.read_short();
+                let a = wst.read_short();
+                let c = a ^ b;
+                wst.write_short(c);
+                pc += 1;
+            }	    
             Instruction::SFT | Instruction::SFTk | Instruction::SFTr | Instruction::SFTkr => {
                 let shift = wst.read();
                 let a = wst.read();

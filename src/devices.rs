@@ -11,7 +11,8 @@ enum Device {
     SystemBlueHigh = 0x0c,
     SystemBlueLow = 0x0d,
     ConsoleWrite = 0x18,
-    ScreenVector = 0x20,
+    ScreenVectorHigh = 0x20,
+    ScreenVectorLow = 0x21,
     ScreenWidthHigh = 0x22,
     ScreenWidthLow = 0x23,
     ScreenHeightHigh = 0x24,
@@ -34,7 +35,7 @@ enum Device {
 pub const SCREEN_WIDTH: usize = 512;
 const SCREEN_WIDTH_HIGH: u8 = (SCREEN_WIDTH / 256) as u8;
 const SCREEN_WIDTH_LOW: u8 = (SCREEN_WIDTH % 256) as u8;
-pub const SCREEN_HEIGHT: usize = 320;
+pub const SCREEN_HEIGHT: usize = 312;
 const SCREEN_HEIGHT_HIGH: u8 = (SCREEN_HEIGHT / 256) as u8;
 const SCREEN_HEIGHT_LOW: u8 = (SCREEN_HEIGHT % 256) as u8;
 const SCREEN_SIZE: usize = (SCREEN_WIDTH * SCREEN_HEIGHT * 4) as usize;
@@ -84,6 +85,12 @@ impl Devices {
             Device::ConsoleWrite => {
                 print!("{}", val as char);
             }
+	    Device::ScreenVectorHigh => {
+		self.screen[0] = val;
+	    }
+	    Device::ScreenVectorLow => {
+		self.screen[1] = val;
+	    }
             Device::ScreenXHigh => {
                 self.screen[7] = val;
             }
@@ -259,6 +266,10 @@ impl Devices {
 	(self.controller[0] as u16) * 256 + self.controller[1] as u16
     }
 
+    pub fn get_screen_vector(&self) -> u16 {
+        (self.screen[0] as u16) * 256 + self.screen[1] as u16
+    }
+
     fn get_screen_x(&self) -> u16 {
         (self.screen[7] as u16) * 256 + self.screen[8] as u16
     }
@@ -304,7 +315,7 @@ impl Devices {
     }
 
     fn draw_screen_bg(&mut self, x: u16, y: u16, color: [u8; 4]) {
-        let base: usize = ((x as usize) + (y as usize * SCREEN_HEIGHT)) * 4;
+        let base: usize = ((x as usize) + (y as usize * SCREEN_WIDTH)) * 4;
         self.screen_buffer_bg[base] = color[0];
         self.screen_buffer_bg[base + 1] = color[1];
         self.screen_buffer_bg[base + 2] = color[2];
@@ -312,7 +323,7 @@ impl Devices {
     }
 
     fn draw_screen_fg(&mut self, x: u16, y: u16, color: [u8; 4]) {
-        let base: usize = ((x as usize) + (y as usize * SCREEN_HEIGHT)) * 4;
+        let base: usize = ((x as usize) + (y as usize * SCREEN_WIDTH)) * 4;
         self.screen_buffer_fg[base] = color[0];
         self.screen_buffer_fg[base + 1] = color[1];
         self.screen_buffer_fg[base + 2] = color[2];
