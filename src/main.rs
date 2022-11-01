@@ -4,9 +4,9 @@ use std::fs::File;
 use std::io::prelude::*;
 
 use ggez::conf::{WindowMode, WindowSetup};
-use ggez::event::{self, KeyCode, KeyMods};
+use ggez::event;
+use ggez::input::keyboard::{KeyInput, KeyMods, KeyCode};
 use ggez::graphics::{self, *};
-use ggez::timer::check_update_time;
 use ggez::{Context, GameResult};
 use num_enum::FromPrimitive;
 
@@ -241,7 +241,7 @@ impl MachineState {
 
 impl event::EventHandler<ggez::GameError> for MachineState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
-	while check_update_time(ctx, 60) {
+	while ctx.time.check_update_time(60) {
 	    let ns = execute(MachineState {
 		wst: self.wst.clone(),
 		rst: self.rst.clone(),
@@ -257,39 +257,44 @@ impl event::EventHandler<ggez::GameError> for MachineState {
         Ok(())
     }
 
-    fn key_up_event(&mut self, _ctx: &mut Context, keycode: KeyCode, keymods: KeyMods) {
+    fn key_up_event(&mut self, _ctx: &mut Context, keyinput: KeyInput) -> GameResult {
 	let mut button = self.devices.get_button();
-	match keycode {
-	    KeyCode::Up => { button ^= 0b00010000; }
-	    KeyCode::Down => { button ^= 0b00100000; }
-	    KeyCode::Left => { button ^= 0b01000000; }
-	    KeyCode::Right => { button ^= 0b10000000; }
-	    _ => {}
-	};
-	match keymods {
+	if let Some(keycode) = keyinput.keycode {
+	    match keycode {
+		KeyCode::Up => { button ^= 0b00010000; }
+		KeyCode::Down => { button ^= 0b00100000; }
+		KeyCode::Left => { button ^= 0b01000000; }
+		KeyCode::Right => { button ^= 0b10000000; }
+		_ => {}
+	    };
+	}
+	match keyinput.mods {
 	    KeyMods::CTRL => { button ^= 0b00000001; }
 	    _ => {}
 	};
 	self.devices.set_button(button);
+	Ok(())
     }
 
-    fn key_down_event(&mut self, _ctx: &mut Context, keycode: KeyCode, keymods: KeyMods, _repeat: bool) {
-	self.devices.set_key(match keycode {
-	    KeyCode::Key1 => b'1',
-	    KeyCode::Key2 => b'2',
-	    KeyCode::Key3 => b'3',
+    fn key_down_event(&mut self, _ctx: &mut Context, keyinput: KeyInput, _repeat: bool) -> GameResult {
+	self.devices.set_key(match keyinput.keycode {
+	    Some(KeyCode::Key1) => b'1',
+	    Some(KeyCode::Key2) => b'2',
+	    Some(KeyCode::Key3) => b'3',
 	    _ => b'\0'
 	});
 
 	let mut button = self.devices.get_button();
-	match keycode {
-	    KeyCode::Up => { button |= 0b00010000; }
-	    KeyCode::Down => { button |= 0b00100000; }
-	    KeyCode::Left => { button |= 0b01000000; }
-	    KeyCode::Right => { button |= 0b10000000; }
-	    _ => {}
-	};
-	match keymods {
+	if let Some(keycode) = keyinput.keycode {
+	    match keycode {
+		KeyCode::Up => { button |= 0b00010000; }
+		KeyCode::Down => { button |= 0b00100000; }
+		KeyCode::Left => { button |= 0b01000000; }
+		KeyCode::Right => { button |= 0b10000000; }
+		_ => {}
+	    };
+	}
+	match keyinput.mods {
 	    KeyMods::CTRL => { button |= 0b00000001; }
 	    _ => {}
 	};
@@ -306,29 +311,32 @@ impl event::EventHandler<ggez::GameError> for MachineState {
 	self.rst = ns.rst;
 	self.mem = ns.mem;
 	self.devices = ns.devices;
+	Ok(())
     }
 
     fn draw(&mut self, ctx: &mut Context) -> GameResult {
-        graphics::clear(ctx, [0.0, 0.0, 0.0, 1.0].into());
+	let mut canvas = graphics::Canvas::from_frame(ctx, Color::BLACK);
+	canvas.set_sampler(Sampler::nearest_clamp());
 
-        let image_bg = Image::from_rgba8(
+        let image_bg = Image::from_pixels(
             ctx,
-            SCREEN_WIDTH as u16,
-            SCREEN_HEIGHT as u16,
-            &self.devices.screen_buffer_bg,
-        )?;
-        image_bg.draw(ctx, DrawParam::new())?;
+	    &self.devices.screen_buffer_bg,
+	    ImageFormat::Rgba8Unorm,
+            SCREEN_WIDTH as u32,
+            SCREEN_HEIGHT as u32,
+        );
+        image_bg.draw(&mut canvas, DrawParam::new());
 
-        let image_fg = Image::from_rgba8(
+        let image_fg = Image::from_pixels(
             ctx,
-            SCREEN_WIDTH as u16,
-            SCREEN_HEIGHT as u16,
-            &self.devices.screen_buffer_fg,
-        )?;
-        image_fg.draw(ctx, DrawParam::new())?;
+	    &self.devices.screen_buffer_fg,
+	    ImageFormat::Rgba8Unorm,
+            SCREEN_WIDTH as u32,
+            SCREEN_HEIGHT as u32,
+        );
+        image_fg.draw(&mut canvas, DrawParam::new());
 
-        graphics::present(ctx)?;
-        Ok(())
+        canvas.finish(ctx)
     }
 }
 
@@ -346,7 +354,6 @@ fn main() -> GameResult {
 	    ..WindowMode::default()
 	});
 	let (mut ctx, event_loop) = cb.build()?;
-	graphics::set_default_filter(&mut ctx, graphics::FilterMode::Nearest);
 	let state = MachineState::from_file(&args[1])?;
 	event::run(ctx, event_loop, state)
     } else {
